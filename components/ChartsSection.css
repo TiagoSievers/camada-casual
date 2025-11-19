@@ -1,0 +1,328 @@
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.chart-card {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 24px;
+  row-gap: 24px;
+  column-gap: 24px;
+  flex: 0 1 auto;
+  flex-grow: 0;
+  flex-shrink: 1;
+  padding: 24px;
+  padding-top: 24px;
+  padding-right: 24px;
+  padding-bottom: 24px;
+  padding-left: 24px;
+  box-sizing: border-box;
+  background: rgb(255, 255, 255) none repeat scroll 0% 0% / auto padding-box border-box;
+  background-color: rgb(255, 255, 255);
+  background-position: 0% 0%;
+  background-repeat: repeat;
+  color: oklch(0.145 0 0);
+  opacity: 1;
+  border: 1px solid oklch(0.928 0.006 264.531);
+  border-top: 1px solid oklch(0.928 0.006 264.531);
+  border-right: 1px solid oklch(0.928 0.006 264.531);
+  border-bottom: 1px solid oklch(0.928 0.006 264.531);
+  border-left: 1px solid oklch(0.928 0.006 264.531);
+  border-width: 1px;
+  border-style: solid;
+  border-color: oklch(0.928 0.006 264.531);
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  line-height: 24px;
+  text-align: left;
+  position: static;
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: visible;
+  overflow-x: visible;
+  overflow-y: visible;
+}
+
+.chart-card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.chart-header {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 24px;
+}
+
+.chart-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+
+.chart-title {
+  margin: 0;
+  color: rgb(217, 119, 6);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+  height: 24px;
+}
+
+.chart-filters {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.chart-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chart-filter-group label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.chart-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 8px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+  border-left-width: 1px;
+  border-top-style: solid;
+  border-right-style: solid;
+  border-left-style: solid;
+  border-top-color: rgba(0, 0, 0, 0.08);
+  border-right-color: rgba(0, 0, 0, 0.08);
+  border-left-color: rgba(0, 0, 0, 0.08);
+  padding: 8px 12px;
+  font-family: var(--default-font-family);
+  font-feature-settings: var(--default-font-feature-settings, normal);
+  font-kerning: auto;
+  font-optical-sizing: auto;
+  font-size: 14px;
+  font-size-adjust: none;
+  font-stretch: 100%;
+  font-style: normal;
+  font-synthesis-small-caps: none;
+  font-synthesis-style: none;
+  font-synthesis-weight: none;
+  font-variant-alternates: normal;
+  font-variant-caps: normal;
+  font-weight: var(--font-weight-normal);
+  white-space: nowrap;
+  transition: all 0.15s;
+  transition-timing-function: cubic-bezier(.4, 0, .2, 1);
+  outline: none;
+  background: var(--color-white);
+  color: var(--foreground);
+  cursor: pointer;
+  width: 180px;
+  height: 36px;
+  box-sizing: border-box;
+  column-gap: 8px;
+  direction: ltr;
+}
+
+.chart-filter:hover {
+  background: var(--input-background);
+}
+
+.chart-filter:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+.chart-container {
+  width: 100%;
+  height: 320px;
+  box-sizing: border-box;
+}
+
+.chart-placeholder {
+  display: block;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  flex: 0 1 auto;
+  flex-grow: 0;
+  flex-shrink: 1;
+  width: auto;
+  height: 320px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box;
+  background-position: 0% 0%;
+  background-repeat: repeat;
+  color: oklch(0.145 0 0);
+  opacity: 1;
+  border: 0px solid rgba(0, 0, 0, 0.08);
+  border-top: 0px solid rgba(0, 0, 0, 0.08);
+  border-right: 0px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 0px solid rgba(0, 0, 0, 0.08);
+  border-left: 0px solid rgba(0, 0, 0, 0.08);
+  border-style: solid;
+  border-color: rgba(0, 0, 0, 0.08);
+  font-size: 16px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  line-height: 24px;
+  text-align: left;
+  position: static;
+  transition: all;
+  overflow: visible;
+  overflow-x: visible;
+  overflow-y: visible;
+}
+
+/* Estilos do Recharts baseados nos estilos coletados */
+.recharts-wrapper {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 320px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0);
+  color: oklch(0.145 0 0);
+  font-size: 16px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  line-height: 24px;
+  text-align: left;
+  cursor: default;
+}
+
+.recharts-surface {
+  display: block;
+  width: 100%;
+  height: 320px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0);
+  color: oklch(0.145 0 0);
+  font-size: 16px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  line-height: 24px;
+  text-align: left;
+  position: static;
+  overflow: hidden;
+}
+
+.recharts-cartesian-grid {
+  stroke: oklch(0.928 0.006 264.531);
+  stroke-opacity: 0.3;
+}
+
+.recharts-text {
+  font-size: 11px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  fill: oklch(0.145 0 0);
+}
+
+.recharts-cartesian-axis-tick-value {
+  font-size: 11px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  fill: oklch(0.145 0 0);
+  white-space: nowrap;
+}
+
+.recharts-bar-rectangle {
+  cursor: default;
+}
+
+/* Estilos específicos do gráfico de linha */
+.recharts-line {
+  stroke: rgb(245, 158, 11);
+  stroke-width: 3px;
+}
+
+.recharts-line-dot {
+  fill: rgb(245, 158, 11);
+  stroke: rgb(245, 158, 11);
+  stroke-width: 3px;
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgb(229, 231, 235);
+  stroke-width: 1px;
+  stroke-dasharray: 3px, 3px;
+}
+
+.recharts-cartesian-axis-line {
+  stroke: rgb(102, 102, 102);
+  stroke-width: 1px;
+}
+
+.recharts-cartesian-axis-tick-line {
+  stroke: rgb(102, 102, 102);
+  stroke-width: 1px;
+}
+
+.recharts-cartesian-axis-tick-value {
+  font-size: 11px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  fill: rgb(107, 114, 128);
+  white-space: nowrap;
+}
+
+.recharts-cartesian-axis-tick-value tspan {
+  font-size: 11px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  fill: rgb(107, 114, 128);
+  white-space: nowrap;
+}
+
+/* Estilos elegantes para o Tooltip */
+.recharts-tooltip-wrapper {
+  outline: none;
+}
+
+.recharts-default-tooltip {
+  background-color: white !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  padding: 8px 12px !important;
+}
+
+.recharts-tooltip-label {
+  color: rgb(217, 119, 6) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  margin-bottom: 4px !important;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji" !important;
+}
+
+.recharts-tooltip-item {
+  color: oklch(0.145 0 0) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji" !important;
+}
+
+.recharts-tooltip-item-value {
+  color: rgb(217, 119, 6) !important;
+  font-weight: 500 !important;
+}
+
