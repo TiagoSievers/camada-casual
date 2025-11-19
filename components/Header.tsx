@@ -107,7 +107,7 @@ export default function Header({ filters, filterOptions, onFiltersChange }: Head
                     value={filters.dateRange?.start instanceof Date ? filters.dateRange.start.toISOString().split('T')[0] : filters.dateRange?.start || ''}
                     onChange={(e) => {
                       const start = e.target.value ? new Date(e.target.value) : new Date()
-                      const end = filters.dateRange?.end || new Date()
+                      const end = filters.dateRange?.end instanceof Date ? filters.dateRange.end : new Date(filters.dateRange?.end || new Date())
                       handleDateChange(start, end)
                     }}
                     style={{ marginBottom: '8px', padding: '8px', width: '100%' }}
@@ -116,7 +116,7 @@ export default function Header({ filters, filterOptions, onFiltersChange }: Head
                     type="date"
                     value={filters.dateRange?.end instanceof Date ? filters.dateRange.end.toISOString().split('T')[0] : filters.dateRange?.end || ''}
                     onChange={(e) => {
-                      const start = filters.dateRange?.start || new Date()
+                      const start = filters.dateRange?.start instanceof Date ? filters.dateRange.start : new Date(filters.dateRange?.start || new Date())
                       const end = e.target.value ? new Date(e.target.value) : new Date()
                       handleDateChange(start, end)
                     }}
