@@ -1,0 +1,218 @@
+.margin-profitability-section {
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 32px;
+}
+
+.section-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+/* Cards de Resumo */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.summary-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+  transition: box-shadow 0.2s;
+}
+
+.summary-card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.card-header h3 {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.main-value {
+  font-size: 48px;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1;
+}
+
+.comparison {
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.comparison-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.comparison-value {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.comparison-value.positive {
+  color: #10b981;
+}
+
+.comparison-value.negative {
+  color: #ef4444;
+}
+
+/* Tabelas */
+.tables-container {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.table-wrapper {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.table-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 16px 0;
+}
+
+.margin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.margin-table thead {
+  background: #f9fafb;
+}
+
+.margin-table th {
+  padding: 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.margin-table th:first-child {
+  width: 40%;
+}
+
+.margin-table td {
+  padding: 12px;
+  font-size: 14px;
+  color: #1f2937;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.margin-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.margin-table tbody tr:hover:not(.total-row) {
+  background-color: #f9fafb;
+}
+
+.margin-table tbody tr.disabled {
+  opacity: 0.4;
+}
+
+.margin-table tbody tr.disabled:hover {
+  background-color: transparent;
+}
+
+.margin-table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.margin-table td:first-child input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.margin-table td:first-child span {
+  font-weight: 500;
+}
+
+.col-lucro {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.col-receita {
+  color: #6b7280;
+}
+
+.col-margem {
+  color: #1e3a5f;
+  font-weight: 600;
+}
+
+.total-row {
+  background: #f9fafb;
+  font-weight: 600;
+}
+
+.total-row td {
+  padding-top: 16px;
+  padding-bottom: 16px;
+  border-top: 2px solid #e5e7eb;
+  border-bottom: none;
+}
+
+/* Responsivo */
+@media (max-width: 1024px) {
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .tables-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .margin-profitability-section {
+    padding: 16px;
+  }
+
+  .main-value {
+    font-size: 36px;
+  }
+}
+

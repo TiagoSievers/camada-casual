@@ -3,33 +3,40 @@
 import { useState } from 'react'
 import './Sidebar.css'
 
+export type TabType = 'status' | 'margin' | 'performance' | 'rankings'
+
 interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
+  activeTab: TabType
+  onTabChange: (tab: TabType) => void
 }
 
-export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
-  const menuItems = [
+export default function Sidebar({ isOpen, onToggle, activeTab, onTabChange }: SidebarProps) {
+  const menuItems: Array<{ icon: string; label: string; subtitle: string; tab: TabType }> = [
     { 
       icon: 'layout-dashboard', 
       label: 'Status de Projetos', 
       subtitle: 'Visão geral do pipeline',
-      active: true 
+      tab: 'status'
     },
     { 
       icon: 'trending-up', 
       label: 'Margem & Rentabilidade',
-      subtitle: 'Análise de margens'
+      subtitle: 'Análise de margens',
+      tab: 'margin'
     },
     { 
       icon: 'users', 
       label: 'Performance Comercial',
-      subtitle: 'Vendedores e arquitetos'
+      subtitle: 'Vendedores e arquitetos',
+      tab: 'performance'
     },
     { 
       icon: 'trophy', 
       label: 'TOP 10 Rankings',
-      subtitle: 'Produtos e clientes'
+      subtitle: 'Produtos e clientes',
+      tab: 'rankings'
     },
   ]
 
@@ -88,25 +95,29 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         )}
       </div>
       <nav className="sidebar-nav">
-        {menuItems.map((item, index) => (
-          <button
-            key={index}
-            className={`nav-item ${item.active ? 'active' : ''}`}
-          >
-            <IconComponent 
-              name={item.icon} 
-              className={`nav-icon ${item.active ? 'icon-active' : 'icon-inactive'}`}
-            />
-            {isOpen && (
-              <div className="nav-text">
-                <p className="nav-label">{item.label}</p>
-                <p className={`nav-sublabel ${item.active ? 'sublabel-active' : ''}`}>
-                  {item.subtitle}
-                </p>
-              </div>
-            )}
-          </button>
-        ))}
+        {menuItems.map((item, index) => {
+          const isActive = activeTab === item.tab
+          return (
+            <button
+              key={index}
+              className={`nav-item ${isActive ? 'active' : ''}`}
+              onClick={() => onTabChange(item.tab)}
+            >
+              <IconComponent 
+                name={item.icon} 
+                className={`nav-icon ${isActive ? 'icon-active' : 'icon-inactive'}`}
+              />
+              {isOpen && (
+                <div className="nav-text">
+                  <p className="nav-label">{item.label}</p>
+                  <p className={`nav-sublabel ${isActive ? 'sublabel-active' : ''}`}>
+                    {item.subtitle}
+                  </p>
+                </div>
+              )}
+            </button>
+          )
+        })}
       </nav>
     </aside>
   )

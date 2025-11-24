@@ -170,3 +170,4 @@ Para calcular as métricas do funil, é necessário:
 5. **Tratar campos opcionais** (loja, arquiteto podem estar ausentes)
 
 
+

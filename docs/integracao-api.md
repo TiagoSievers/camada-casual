@@ -121,3 +121,4 @@ Considerar implementar:
 - Retry logic para falhas temporárias
 
 
+
