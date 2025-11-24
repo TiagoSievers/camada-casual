@@ -26,9 +26,12 @@
 .summary-card {
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 20px;
-  transition: box-shadow 0.2s;
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .summary-card:hover {
@@ -37,11 +40,11 @@
 
 .card-header h3 {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   color: #6b7280;
   margin: 0 0 12px 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  line-height: 20px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
 .card-content {
@@ -51,10 +54,11 @@
 }
 
 .main-value {
-  font-size: 48px;
-  font-weight: 700;
-  color: #1f2937;
-  line-height: 1;
+  font-size: 56px;
+  font-weight: 400;
+  color: #10b981;
+  line-height: 61.6px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
 .comparison {
