@@ -17,6 +17,7 @@ interface UseTop10DataReturn {
   loading: boolean
   error: string | null
   refetch: () => Promise<void>
+  refreshClientes: () => Promise<void>
 }
 
 export function useTop10Data(filters: DashboardFilters): UseTop10DataReturn {
@@ -59,5 +60,6 @@ export function useTop10Data(filters: DashboardFilters): UseTop10DataReturn {
     loading,
     error,
     refetch: loadTop10Data,
+    refreshClientes: loadTop10Data,
   }
 }
