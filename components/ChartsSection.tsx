@@ -285,9 +285,10 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
 
           // Adicionar à data apropriada
           if (metric === 'sent' && hasSent && sentDate) {
-            if (sentDate >= dateRangeDaily.start && sentDate <= dateRangeDaily.end) {
-              const dateKey = sentDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-              const timestamp = sentDate.getTime()
+            const date = sentDate as Date
+            if (date >= dateRangeDaily.start && date <= dateRangeDaily.end) {
+              const dateKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+              const timestamp = date.getTime()
 
               if (!dataByDate.has(dateKey)) {
                 dataByDate.set(dateKey, { created: 0, sent: 0, approved: 0, timestamp })
@@ -295,9 +296,10 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
               dataByDate.get(dateKey)!.sent++
             }
           } else if (metric === 'approved' && hasApproved && approvedDate) {
-            if (approvedDate >= dateRangeDaily.start && approvedDate <= dateRangeDaily.end) {
-              const dateKey = approvedDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-              const timestamp = approvedDate.getTime()
+            const date = approvedDate as Date
+            if (date >= dateRangeDaily.start && date <= dateRangeDaily.end) {
+              const dateKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+              const timestamp = date.getTime()
 
               if (!dataByDate.has(dateKey)) {
                 dataByDate.set(dateKey, { created: 0, sent: 0, approved: 0, timestamp })
