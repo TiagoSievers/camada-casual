@@ -1,44 +1,35 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import './FunnelSection.css'
-import type { Project } from '@/types/dashboard'
+import type { Project, DashboardFilters } from '@/types/dashboard'
+import { calculateFunnelMetrics } from '@/lib/api'
 
 interface FunnelSectionProps {
+  /** Projetos filtrados pelo período (usado no Funil Fechado) */
   projects?: Project[]
+  /** Todos os projetos sem filtro de data (usado para Funil Aberto e mês anterior) */
+  allProjects?: Project[]
+  /** Filtros atuais, usados aqui para data (período/mês) */
+  filters: DashboardFilters
 }
 
-export default function FunnelSection({ projects = [] }: FunnelSectionProps) {
+export default function FunnelSection({ projects = [], allProjects = [], filters }: FunnelSectionProps) {
   const [funnelType, setFunnelType] = useState<'closed' | 'open'>('closed')
   const [comparePrevious, setComparePrevious] = useState(false)
-
-  // Calcular métricas baseado nos projetos da API (dados disponíveis)
-  const createdCount = projects.length
-  
-  // Contar projetos com orçamentos (projetos que têm pelo menos um orçamento)
-  const projectsWithOrcamentos = projects.filter(p => p.new_orcamentos && p.new_orcamentos.length > 0).length
-  
-  // Calcular taxa de envio (projetos com orçamentos / total de projetos)
-  const sentCount = projectsWithOrcamentos
-  const sentPercentage = createdCount > 0 
-    ? ((sentCount / createdCount) * 100).toFixed(1) 
-    : '0'
-  
-  const funnelData = {
+  const [funnelData, setFunnelData] = useState({
     created: { 
-      count: createdCount, 
+      count: 0, 
       label: 'Projetos Criados', 
       sublabel: 'projetos' 
     },
     sent: { 
-      count: sentCount, 
+      count: 0, 
       label: 'Projetos Enviados', 
       sublabel: 'ao cliente', 
-      percentage: `${sentPercentage}%`, 
+      percentage: '0%', 
       labelPercentage: 'Taxa envio' 
     },
-    // Nota: Para calcular estes valores precisamos consultar a API de orçamentos
-    // Por enquanto, mostramos 0
     inApproval: { 
       count: 0, 
       percentage: '0%', 
@@ -57,15 +48,166 @@ export default function FunnelSection({ projects = [] }: FunnelSectionProps) {
       label: 'Reprovados', 
       sublabel: 'dos enviados' 
     },
+  })
+  const [previousFunnelData, setPreviousFunnelData] = useState<typeof funnelData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Helpers de datas
+  const currentStartDate = useMemo(() => new Date(filters.dateRange.start), [filters.dateRange.start])
+  const currentEndDate = useMemo(() => new Date(filters.dateRange.end), [filters.dateRange.end])
+
+  const isFullMonth = useMemo(() => {
+    const start = new Date(currentStartDate)
+    const end = new Date(currentEndDate)
+    // Normalizar para meia-noite para comparação
+    start.setHours(0, 0, 0, 0)
+    end.setHours(0, 0, 0, 0)
+
+    const firstDayOfMonth = new Date(start.getFullYear(), start.getMonth(), 1)
+    const lastDayOfMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0)
+
+    return (
+      start.getTime() === firstDayOfMonth.getTime() &&
+      end.getFullYear() === lastDayOfMonth.getFullYear() &&
+      end.getMonth() === lastDayOfMonth.getMonth() &&
+      end.getDate() === lastDayOfMonth.getDate()
+    )
+  }, [currentStartDate, currentEndDate])
+
+  const previousMonthRange = useMemo(() => {
+    if (!isFullMonth) return null
+
+    const start = new Date(currentStartDate)
+    const prevMonthStart = new Date(start.getFullYear(), start.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(start.getFullYear(), start.getMonth(), 0)
+
+    return { start: prevMonthStart, end: prevMonthEnd }
+  }, [currentStartDate, isFullMonth])
+
+  const getProjectCreatedDate = (project: Project) => {
+    const created = project['Created Date']
+    return created ? new Date(created) : null
   }
+
+  // Projetos usados em cada visão de funil
+  const closedFunnelProjects = useMemo(() => {
+    // Já recebemos os projetos filtrados por período via props (filteredProjects)
+    return projects
+  }, [projects])
+
+  const openFunnelProjects = useMemo(() => {
+    // Funil Aberto: todos os projetos criados até a data final do filtro
+    return (allProjects || []).filter(project => {
+      const createdDate = getProjectCreatedDate(project)
+      if (!createdDate) return false
+      return createdDate <= currentEndDate
+    })
+  }, [allProjects, currentEndDate])
+
+  const previousMonthClosedProjects = useMemo(() => {
+    if (!previousMonthRange) return []
+
+    return (allProjects || []).filter(project => {
+      const createdDate = getProjectCreatedDate(project)
+      if (!createdDate) return false
+      return createdDate >= previousMonthRange.start && createdDate <= previousMonthRange.end
+    })
+  }, [allProjects, previousMonthRange])
+
+  // Calcular métricas quando os projetos mudarem
+  useEffect(() => {
+    const loadFunnelData = async () => {
+      const currentProjects =
+        funnelType === 'closed'
+          ? closedFunnelProjects
+          : openFunnelProjects
+
+      if (currentProjects.length === 0) {
+        setFunnelData({
+          created: { count: 0, label: 'Projetos Criados', sublabel: 'projetos' },
+          sent: { count: 0, label: 'Projetos Enviados', sublabel: 'ao cliente', percentage: '0%', labelPercentage: 'Taxa envio' },
+          inApproval: { count: 0, percentage: '0%', label: 'Em Aprovação', sublabel: 'dos enviados' },
+          approved: { count: 0, percentage: '0%', label: 'Aprovados', sublabel: 'dos enviados' },
+          rejected: { count: 0, percentage: '0%', label: 'Reprovados', sublabel: 'dos enviados' },
+        })
+        setPreviousFunnelData(null)
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        const metrics = await calculateFunnelMetrics(currentProjects, funnelType, comparePrevious)
+        setFunnelData(metrics)
+
+        // Calcular mês anterior apenas para Funil Fechado, quando for mês cheio e opção marcada
+        if (funnelType === 'closed' && comparePrevious && previousMonthClosedProjects.length > 0) {
+          const previousMetrics = await calculateFunnelMetrics(previousMonthClosedProjects, funnelType, false)
+          setPreviousFunnelData(previousMetrics)
+        } else {
+          setPreviousFunnelData(null)
+        }
+      } catch (error) {
+        console.error('Erro ao calcular métricas do funil:', error)
+        // Em caso de erro, usar cálculo básico
+        const createdCount = currentProjects.length
+        const projectsWithOrcamentos = currentProjects.filter(p => p.new_orcamentos && p.new_orcamentos.length > 0).length
+        const sentCount = projectsWithOrcamentos
+        const sentPercentage = createdCount > 0 
+          ? ((sentCount / createdCount) * 100).toFixed(1) 
+          : '0'
+        
+        setFunnelData({
+          created: { count: createdCount, label: 'Projetos Criados', sublabel: 'projetos' },
+          sent: { count: sentCount, label: 'Projetos Enviados', sublabel: 'ao cliente', percentage: `${sentPercentage}%`, labelPercentage: 'Taxa envio' },
+          inApproval: { count: 0, percentage: '0%', label: 'Em Aprovação', sublabel: 'dos enviados' },
+          approved: { count: 0, percentage: '0%', label: 'Aprovados', sublabel: 'dos enviados' },
+          rejected: { count: 0, percentage: '0%', label: 'Reprovados', sublabel: 'dos enviados' },
+        })
+        setPreviousFunnelData(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadFunnelData()
+  }, [
+    closedFunnelProjects,
+    openFunnelProjects,
+    funnelType,
+    comparePrevious,
+    previousMonthClosedProjects,
+  ])
   
   // Mostrar aviso se não houver dados
-  const showInfo = createdCount === 0
+  const showInfo = funnelData.created.count === 0 && !loading
+
+  const formatDeltaPercent = (current: number, previous: number) => {
+    if (!previous || previous === 0) return '—'
+    const delta = ((current - previous) / previous) * 100
+    const sign = delta >= 0 ? '+' : ''
+    return `${sign}${delta.toFixed(1)}%`
+  }
+
+  const createdPreviousCount = previousFunnelData?.created.count ?? 0
+  const sentPreviousCount = previousFunnelData?.sent.count ?? 0
+  const sentPreviousPercentage = previousFunnelData
+    ? parseFloat(previousFunnelData.sent.percentage.replace('%', '') || '0')
+    : 0
+  const inApprovalPreviousPercentage = previousFunnelData
+    ? parseFloat(previousFunnelData.inApproval.percentage.replace('%', '') || '0')
+    : 0
+  const approvedPreviousPercentage = previousFunnelData
+    ? parseFloat(previousFunnelData.approved.percentage.replace('%', '') || '0')
+    : 0
+  const rejectedPreviousPercentage = previousFunnelData
+    ? parseFloat(previousFunnelData.rejected.percentage.replace('%', '') || '0')
+    : 0
 
   return (
     <div className="funnel-section">
       <div className="funnel-header">
-        <div className="funnel-title-section">
+          <div className="funnel-title-section">
           <h3 className="funnel-title">Análise de Funil de Projetos</h3>
           <p className="funnel-subtitle">Fluxo de criação e conversão</p>
         </div>
@@ -100,7 +242,7 @@ export default function FunnelSection({ projects = [] }: FunnelSectionProps) {
             </div>
             <div className="funnel-info-content">
               <p className="funnel-info-text">
-                <span className="funnel-info-bold">Funil Fechado:</span> Mostra apenas os projetos criados no período selecionado (Nov 1-5, 2025) e como eles progrediram até a data final.
+                <span className="funnel-info-bold">Funil Fechado:</span> Mostra apenas os projetos criados no período selecionado e como eles progrediram até a data final.
               </p>
             </div>
           </div>

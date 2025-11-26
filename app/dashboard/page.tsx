@@ -6,6 +6,8 @@ import Header from '@/components/Header'
 import FunnelSection from '@/components/FunnelSection'
 import ChartsSection from '@/components/ChartsSection'
 import MarginProfitabilitySection from '@/components/MarginProfitabilitySection'
+import PerformanceComercialSection from '@/components/PerformanceComercialSection'
+import Top10Section from '@/components/Top10Section'
 import { useProjects } from '@/hooks/useProjects'
 import { useFilterOptions } from '@/hooks/useFilterOptions'
 import type { DashboardFilters } from '@/types/dashboard'
@@ -15,17 +17,20 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('status')
   
-  // Inicializar filtros com período padrão (últimos 30 dias)
+  // Inicializar filtros com período padrão (últimos 7 dias)
   const [filters, setFilters] = useState<DashboardFilters>(() => {
     const end = new Date()
+    end.setHours(23, 59, 59, 999)
     const start = new Date()
-    start.setDate(start.getDate() - 30)
+    start.setDate(start.getDate() - 7)
+    start.setHours(0, 0, 0, 0)
     return {
       dateRange: { start, end },
       nucleo: null,
       loja: null,
       vendedor: null,
       arquiteto: null,
+      status: null,
     }
   })
 
@@ -33,7 +38,7 @@ export default function DashboardPage() {
   const { options: filterOptions, loading: optionsLoading } = useFilterOptions()
   
   // Buscar projetos com filtros
-  const { filteredProjects, loading: projectsLoading, error } = useProjects(filters)
+  const { projects: allProjects, filteredProjects, loading: projectsLoading, error } = useProjects(filters)
 
   const renderContent = () => {
     if (error) {
@@ -56,8 +61,12 @@ export default function DashboardPage() {
       case 'status':
         return (
           <>
-            <FunnelSection projects={filteredProjects} />
-            <ChartsSection projects={filteredProjects} />
+            <FunnelSection 
+              projects={filteredProjects} 
+              allProjects={allProjects}
+              filters={filters}
+            />
+            <ChartsSection projects={allProjects} />
           </>
         )
       case 'margin':
@@ -69,15 +78,11 @@ export default function DashboardPage() {
         )
       case 'performance':
         return (
-          <div style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
-            Performance Comercial - Em desenvolvimento
-          </div>
+          <PerformanceComercialSection filters={filters} />
         )
       case 'rankings':
         return (
-          <div style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
-            TOP 10 Rankings - Em desenvolvimento
-          </div>
+          <Top10Section filters={filters} />
         )
       default:
         return null
@@ -97,6 +102,7 @@ export default function DashboardPage() {
           filters={filters}
           filterOptions={filterOptions}
           onFiltersChange={setFilters}
+          activeTab={activeTab}
         />
         <div className="dashboard-content">
           {renderContent()}

@@ -29,7 +29,7 @@ export function useProjects(filters: DashboardFilters): UseProjectsReturn {
       const allProjects = await fetchProjects()
       setProjects(allProjects)
       
-      // Aplicar filtros localmente
+      // Aplicar filtros
       const filtered = filterProjects(allProjects, filters)
       setFilteredProjects(filtered)
     } catch (err) {

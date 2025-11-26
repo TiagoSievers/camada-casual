@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { fetchProjects } from '@/lib/api'
+import { fetchProjects, fetchLojas, fetchVendedores, fetchArquitetos } from '@/lib/api'
 import type { Project, FilterOptions, Nucleo } from '@/types/dashboard'
 
 interface UseFilterOptionsReturn {
@@ -43,66 +43,53 @@ export function useFilterOptions(): UseFilterOptionsReturn {
           name: id, // TODO: Buscar nome do núcleo se houver API específica
         }))
 
-        // Extrair lojas únicas
-        const lojasMap = new Map<string, { id: string; nucleoId?: Nucleo }>()
-        projects.forEach(project => {
-          if (project.loja) {
-            if (!lojasMap.has(project.loja)) {
-              lojasMap.set(project.loja, {
-                id: project.loja,
-                nucleoId: project.nucleo_lista?.[0], // Usar primeiro núcleo como referência
-              })
-            }
-          }
-        })
-        const lojas = Array.from(lojasMap.values()).map(loja => ({
-          id: loja.id,
-          name: loja.id, // TODO: Buscar nome da loja se houver API específica
-          nucleoId: loja.nucleoId,
-        }))
-
-        // Extrair vendedores únicos
-        const vendedoresMap = new Map<string, { id: string; nucleo: Nucleo[] }>()
-        projects.forEach(project => {
-          // Extrair todos os IDs de vendedores
-          const vendedorIds = extractVendedorIds(project)
-          vendedorIds.forEach(id => {
-            if (!vendedoresMap.has(id)) {
-              vendedoresMap.set(id, {
-                id,
-                nucleo: project.nucleo_lista || [],
-              })
-            } else {
-              // Adicionar núcleos adicionais se não estiverem na lista
-              const existing = vendedoresMap.get(id)!
-              if (project.nucleo_lista) {
-                project.nucleo_lista.forEach(n => {
-                  if (!existing.nucleo.includes(n)) {
-                    existing.nucleo.push(n)
-                  }
-                })
-              }
-            }
+        // Buscar TODAS as lojas da API (apenas filtrar removidas)
+        const lojasData = await fetchLojas(false) // false = use cache if available
+        const lojas = lojasData
+          .filter(loja => {
+            // Pular apenas lojas removidas
+            return loja.removido !== true
           })
-        })
-        const vendedores = Array.from(vendedoresMap.values()).map(v => ({
-          id: v.id,
-          name: v.id, // TODO: Buscar nome do vendedor se houver API específica
-          type: 'vendedor' as const, // TODO: Determinar tipo (vendedor/gerente) se houver campo
-          nucleo: v.nucleo,
-        }))
+          .map(loja => ({
+            id: loja._id,
+            name: loja.nome_da_loja || loja._id,
+            nucleoId: undefined, // TODO: Se houver relação núcleo-loja na API
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name))
 
-        // Extrair arquitetos únicos
-        const arquitetosMap = new Map<string, string>()
-        projects.forEach(project => {
-          if (project.arquiteto) {
-            arquitetosMap.set(project.arquiteto, project.arquiteto)
-          }
-        })
-        const arquitetos = Array.from(arquitetosMap.entries()).map(([id, name]) => ({
-          id,
-          name, // TODO: Buscar nome do arquiteto se houver API específica
-        }))
+        // Buscar TODOS os vendedores da API (apenas filtrar removidos/inativos)
+        const vendedoresData = await fetchVendedores(false) // false = use cache if available
+        const vendedores = vendedoresData
+          .filter(vendedor => {
+            // Pular vendedores removidos
+            if (vendedor.removido === true) return false
+            // Pular vendedores inativos
+            if (vendedor['status_do_vendedor'] && vendedor['status_do_vendedor'] !== 'ATIVO') return false
+            return true
+          })
+          .map(vendedor => ({
+            id: vendedor._id,
+            name: vendedor.nome || vendedor._id,
+            type: 'vendedor' as const, // TODO: Determinar tipo (vendedor/gerente) se houver campo
+            nucleo: [], // TODO: Se houver relação vendedor-núcleo na API
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+
+        // Buscar TODOS os arquitetos da API (apenas filtrar removidos/inativos)
+        const arquitetosData = await fetchArquitetos(false) // false = use cache if available
+        const arquitetos = arquitetosData
+          .filter(arquiteto => {
+            // Pular arquitetos removidos
+            if (arquiteto.removido === true) return false
+            // Pular arquitetos inativos
+            if (arquiteto['Status do Arquiteto'] && arquiteto['Status do Arquiteto'] !== 'ATIVO') return false
+            return true
+          })
+          .map(arquiteto => ({
+            id: arquiteto._id,
+            name: arquiteto['Nome do Arquiteto'] || arquiteto._id,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name))
 
         setOptions({
           nucleos,
@@ -122,52 +109,6 @@ export function useFilterOptions(): UseFilterOptionsReturn {
   }, [])
 
   return { options, loading, error }
-}
-
-/**
- * Extrai todos os IDs de vendedores de um projeto
- */
-function extractVendedorIds(project: Project): string[] {
-  const ids: string[] = []
-  
-  if (project.vendedor_user) ids.push(project.vendedor_user)
-  if (project.Gerenciador) ids.push(project.Gerenciador)
-  
-  const principalFields = [
-    'user Interiores - Vendedor Principal',
-    'user Exteriores - Vendedor Principal',
-    'user Conceito - Vendedor Principal',
-    'user Projetos - Vendedor Principal',
-    'Interiores - Vendedor Principal',
-    'Exteriores - Vendedor Principal',
-    'Conceito - Vendedor Principal',
-    'Projetos - Vendedor Principal',
-  ] as const
-  
-  principalFields.forEach(field => {
-    const value = project[field]
-    if (value && !ids.includes(value)) {
-      ids.push(value)
-    }
-  })
-  
-  const parceiroFields = [
-    'user Interiores - Vendedor Parceiro',
-    'user Exteriores - Vendedor Parceiro',
-    'user Conceito - Vendedor Parceiro',
-    'Interiores - Vendedor Parceiro',
-    'Exteriores - Vendedor Parceiro',
-    'Conceito - Vendedor Parceiro',
-  ] as const
-  
-  parceiroFields.forEach(field => {
-    const value = project[field]
-    if (value && !ids.includes(value)) {
-      ids.push(value)
-    }
-  })
-  
-  return ids
 }
 
 

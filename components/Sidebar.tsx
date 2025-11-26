@@ -109,7 +109,7 @@ export default function Sidebar({ isOpen, onToggle, activeTab, onTabChange }: Si
               />
               {isOpen && (
                 <div className="nav-text">
-                  <p className="nav-label">{item.label}</p>
+                  <p className={`nav-label ${isActive ? 'label-active' : ''}`}>{item.label}</p>
                   <p className={`nav-sublabel ${isActive ? 'sublabel-active' : ''}`}>
                     {item.subtitle}
                   </p>

@@ -9,9 +9,31 @@
 
 .header-top-section {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px; /* mb-6 */
+  height: 48px;
+  width: 100%;
+  margin-top: 0px;
+  margin-bottom: 24px;
+  margin-left: 0px;
+  margin-right: 0px;
+  padding-top: 0px;
+  padding-bottom: 0px;
+  padding-left: 0px;
+  padding-right: 0px;
+  line-height: 24px;
+  font-size: 16px;
+  font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  color: oklch(0.145 0 0);
+  box-sizing: border-box;
+  position: static;
+  overflow: visible;
+  flex-wrap: nowrap;
+  flex-grow: 0;
+  flex-shrink: 1;
+  flex-basis: auto;
 }
 
 .header-left-group {

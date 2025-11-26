@@ -12,6 +12,7 @@ export type Nucleo = 'Interiores' | 'Exteriores' | 'Conceito' | 'Projetos'
 export type FunnelType = 'open' | 'closed'
 export type MetricType = 'created' | 'sent' | 'approved'
 export type StatusType = 'inApproval' | 'approved' | 'rejected'
+export type OrcamentoStatusFilter = 'Em Aprovação' | 'Enviado' | 'Aprovado' | 'Reprovado'
 
 // ============================================
 // ESTRUTURA DO PROJETO (JSON)
@@ -82,6 +83,7 @@ export interface DashboardFilters {
   loja?: string | null
   vendedor?: string | null // ID consolidado de vendedor/gerenciador
   arquiteto?: string | null
+  status?: ProjectStatus | null // Status do projeto (Ativo, Pausado, Inativo)
 }
 
 // ============================================
@@ -300,7 +302,12 @@ export function matchesFilters(project: Project, filters: DashboardFilters): boo
   if (filters.arquiteto && project.arquiteto !== filters.arquiteto) {
     return false
   }
-  
+
+  // Filtro de status do projeto
+  if (filters.status && project.status !== filters.status) {
+    return false
+  }
+
   return true
 }
 

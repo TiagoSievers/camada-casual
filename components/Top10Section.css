@@ -1,0 +1,258 @@
+.top10-section {
+  padding: 24px;
+}
+
+.top10-blocks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.top10-block {
+  background: var(--color-white);
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid var(--color-gray-200);
+  transition: box-shadow 0.2s;
+}
+
+.top10-block:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.top10-block-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.top10-refresh-button {
+  margin-left: auto;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.top10-refresh-button:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.top10-refresh-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.top10-refresh-button svg {
+  animation: none;
+}
+
+.top10-refresh-button:not(:disabled):hover svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.top10-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.top10-icon-products {
+  background: #FFFBEB;
+  color: #D97706;
+}
+
+.top10-icon-clients {
+  background: #f3e8ff;
+  color: #9333ea;
+}
+
+.top10-block-title {
+  font-size: 16px;
+  font-weight: 400;
+  color: #D97706;
+  margin: 0;
+  line-height: 24px;
+  height: 24px;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.top10-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.top10-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e5e7eb;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.top10-item:last-child {
+  border-bottom: none;
+}
+
+.top10-item:hover {
+  background-color: transparent;
+}
+
+.top10-rank-number {
+  font-size: 14px;
+  font-weight: 400;
+  color: #6b7280;
+  min-width: 32px;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.top10-initial {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #1e3a5f;
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+  border: none;
+}
+
+.top10-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.top10-item-name {
+  font-size: 14px;
+  font-weight: 400;
+  color: #1e3a5f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.top10-item-client .top10-item-name {
+  color: #4b5563;
+  margin-bottom: 4px;
+}
+
+.top10-item-value {
+  font-size: 14px;
+  font-weight: 400;
+  color: #D97706;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.top10-item-percentage {
+  font-size: 14px;
+  font-weight: 400;
+  color: #9ca3af;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.top10-value-bar {
+  width: 4px;
+  height: 40px;
+  background: transparent;
+  border-radius: 2px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.top10-value-bar-fill {
+  width: 100%;
+  background: #D97706;
+  border-radius: 2px;
+  min-height: 8px;
+  transition: height 0.3s ease;
+}
+
+.top10-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--color-gray-600);
+  font-size: 14px;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .top10-blocks {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .top10-section {
+    padding: 16px;
+  }
+
+  .top10-block {
+    padding: 16px;
+  }
+
+  .top10-item {
+    padding: 8px;
+  }
+
+  .top10-rank-number {
+    font-size: 13px;
+    min-width: 28px;
+  }
+
+  .top10-initial {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .top10-value-bar {
+    width: 3px;
+    height: 32px;
+  }
+
+  .top10-item-name {
+    font-size: 13px;
+  }
+
+  .top10-item-value {
+    font-size: 14px;
+  }
+}
+

@@ -114,6 +114,14 @@
   box-shadow: var(--shadow);
 }
 
+.nav-item.active * {
+  color: white;
+}
+
+.nav-item.active .nav-icon {
+  color: white !important;
+}
+
 .nav-icon {
   width: 20px;
   height: 20px;
@@ -141,14 +149,23 @@
   font-size: 14px;
   font-weight: 500;
   margin: 0;
+  color: var(--text-primary);
+  transition: color 0.2s;
+}
+
+.nav-item.active .nav-label,
+.nav-label.label-active {
+  color: white;
 }
 
 .nav-sublabel {
   font-size: 12px;
   margin: 0;
   color: var(--text-secondary);
+  transition: color 0.2s;
 }
 
+.nav-item.active .nav-sublabel,
 .nav-sublabel.sublabel-active {
   color: rgba(255, 255, 255, 0.8);
 }
