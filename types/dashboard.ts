@@ -303,10 +303,14 @@ export function matchesFilters(project: Project, filters: DashboardFilters): boo
     return false
   }
 
-  // Filtro de status do projeto
-  if (filters.status && project.status !== filters.status) {
-    return false
-  }
+  // Filtro de status do orçamento
+  // Ainda não implementado porque o tipo de filtro (OrcamentoStatusFilter)
+  // não corresponde ao campo de status do projeto (ProjectStatus).
+  // TODO: quando o campo de status de orçamento existir no Project,
+  // aplicar o filtro aqui.
+  // if (filters.status && project.status !== filters.status) {
+  //   return false
+  // }
 
   return true
 }
