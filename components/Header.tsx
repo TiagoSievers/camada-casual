@@ -1,294 +1,156 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import DatePicker, { registerLocale } from 'react-datepicker'
-import { ptBR } from 'date-fns/locale/pt-BR'
-import 'react-datepicker/dist/react-datepicker.css'
 import './Header.css'
-import type { DashboardFilters, FilterOptions, Nucleo, OrcamentoStatusFilter } from '@/types/dashboard'
-import type { TabType } from '@/components/Sidebar'
-
-// Registrar localização em português
-registerLocale('pt-BR', ptBR)
+import type { DashboardFilters, FilterOptions, Nucleo } from '@/types/dashboard'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, startOfWeek, endOfWeek, isWithinInterval, isBefore } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 interface HeaderProps {
   filters: DashboardFilters
   filterOptions: FilterOptions
   onFiltersChange: (filters: DashboardFilters) => void
-  activeTab?: TabType
 }
 
-type DateRangePreset = 'last7days' | 'thisMonth' | 'thisQuarter' | 'thisYear' | 'custom'
-
-export default function Header({ filters, filterOptions, onFiltersChange, activeTab = 'status' }: HeaderProps) {
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
-  const [startDate, setStartDate] = useState<Date>(new Date(filters.dateRange.start))
-  const [endDate, setEndDate] = useState<Date>(new Date(filters.dateRange.end))
-  const [isCustomDateRange, setIsCustomDateRange] = useState(false)
+export default function Header({ filters, filterOptions, onFiltersChange }: HeaderProps) {
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [isSelectingEnd, setIsSelectingEnd] = useState(false)
   const datePickerRef = useRef<HTMLDivElement>(null)
 
-  // Função auxiliar para verificar se as datas correspondem a um preset (sem depender de isCustomDateRange)
-  const matchesPreset = (): boolean => {
-    if (!filters.dateRange) return false
-    
-    const start = new Date(filters.dateRange.start)
-    const end = new Date(filters.dateRange.end)
-    const now = new Date()
-    
-    const normalizeDate = (date: Date) => {
-      const d = new Date(date)
-      d.setHours(0, 0, 0, 0)
-      return d.getTime()
+  // Inicializar mês atual baseado na data selecionada ou hoje
+  const getCurrentMonth = () => {
+    if (filters.dateRange?.start) {
+      return new Date(filters.dateRange.start)
     }
-    
-    const startTime = normalizeDate(start)
-    const endTime = normalizeDate(end)
-    const nowTime = normalizeDate(now)
-    
-    // Verificar se corresponde a algum preset conhecido
-    const last7Days = new Date()
-    last7Days.setDate(last7Days.getDate() - 7)
-    const last7DaysTime = normalizeDate(last7Days)
-    if (startTime === last7DaysTime && endTime >= nowTime - 86400000) return true
-    
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const thisMonthStartTime = normalizeDate(thisMonthStart)
-    if (startTime === thisMonthStartTime && endTime >= nowTime - 86400000) return true
-    
-    const threeMonthsAgo = new Date(now)
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    const threeMonthsAgoTime = normalizeDate(threeMonthsAgo)
-    const daysDiff = Math.abs((startTime - threeMonthsAgoTime) / (1000 * 60 * 60 * 24))
-    if (daysDiff <= 2 && endTime >= nowTime - 86400000) return true
-    
-    const thisYearStart = new Date(now.getFullYear(), 0, 1)
-    const thisYearStartTime = normalizeDate(thisYearStart)
-    if (startTime === thisYearStartTime && endTime >= nowTime - 86400000) return true
-    
-    return false
+    return new Date()
   }
+  const [currentMonth, setCurrentMonth] = useState(getCurrentMonth())
 
-  // Atualizar datas internas quando os filtros mudarem externamente
+  // Atualizar mês quando abrir o calendário
   useEffect(() => {
-    setStartDate(new Date(filters.dateRange.start))
-    setEndDate(new Date(filters.dateRange.end))
-    
-    // Resetar estado custom se os filtros mudarem para um preset padrão
-    // (isso acontece quando troca de aba ou quando o dropdown é usado)
-    if (matchesPreset()) {
-      setIsCustomDateRange(false)
+    if (showDatePicker) {
+      const newMonth = filters.dateRange?.start 
+        ? new Date(filters.dateRange.start)
+        : new Date()
+      setCurrentMonth(newMonth)
     }
-  }, [filters.dateRange])
+  }, [showDatePicker, filters.dateRange?.start])
 
-  // Fechar ao clicar fora
+  // Fechar calendário ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
-        setIsDatePickerOpen(false)
+        setShowDatePicker(false)
       }
     }
 
-    if (isDatePickerOpen) {
+    if (showDatePicker) {
       document.addEventListener('mousedown', handleClickOutside)
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [isDatePickerOpen])
+  }, [showDatePicker])
 
-  const formatDateRangeLabel = () => {
+  // Formatar data para exibição
+  const formatDateRange = () => {
+    if (!filters.dateRange) return 'Selecione o período'
     const start = new Date(filters.dateRange.start)
     const end = new Date(filters.dateRange.end)
-
-    const monthShort = (d: Date) =>
-      d.toLocaleDateString('en-US', { month: 'short' })
-
-    const startMonth = monthShort(start)
-    const endMonth = monthShort(end)
-
-    if (start.getFullYear() === end.getFullYear() && startMonth === endMonth) {
-      // Ex.: "Nov 1 - 5, 2025"
-      return `${startMonth} ${start.getDate()} - ${end.getDate()}, ${end.getFullYear()}`
-    }
-
-    // Ex.: "Nov 28 - Dec 3, 2025"
-    if (start.getFullYear() === end.getFullYear()) {
-      return `${startMonth} ${start.getDate()} - ${endMonth} ${end.getDate()}, ${end.getFullYear()}`
-    }
-
-    // Anos diferentes
-    return `${startMonth} ${start.getDate()}, ${start.getFullYear()} - ${endMonth} ${end.getDate()}, ${end.getFullYear()}`
+    return `${start.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} - ${end.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}`
   }
 
-  const handleDateChange = (dates: [Date | null, Date | null]) => {
-    const [start, end] = dates
-    
-    // Atualizar estados locais conforme o usuário seleciona
-    if (start) {
-      setStartDate(start)
-    }
-    
-    // Sempre atualizar endDate com o valor selecionado (pode ser null se ainda não selecionou)
-    // Isso permite que o usuário selecione qualquer data final, não apenas hoje
-    setEndDate(end || null as any)
-
-    // Aplicar automaticamente quando ambas as datas estiverem selecionadas
-    if (start && end) {
-      const adjustedStart = new Date(start)
-      adjustedStart.setHours(0, 0, 0, 0)
-      
-      const adjustedEnd = new Date(end)
-      adjustedEnd.setHours(23, 59, 59, 999)
-
-      // Marcar como range customizado (ignora o dropdown)
-      setIsCustomDateRange(true)
-
-      // Log das datas selecionadas no calendário (serão usadas diretamente na API)
-      console.log(
-        `calendario customizado start=${adjustedStart.toISOString()} end=${adjustedEnd.toISOString()}`,
-      )
-
-      // Log da URL que será usada na chamada da API de projeto
-      const constraints = [
-        {
-          key: 'Created Date',
-          constraint_type: 'greater than',
-          value: adjustedStart.toISOString(),
-        },
-        {
-          key: 'Created Date',
-          constraint_type: 'less than',
-          value: adjustedEnd.toISOString(),
-        },
-      ]
-      const apiUrl = `https://crm.casualmoveis.com.br/api/1.1/obj/projeto?constraints=${encodeURIComponent(JSON.stringify(constraints))}`
-      console.log(`projeto api url: ${apiUrl}`)
-
-      onFiltersChange({
-        ...filters,
-        dateRange: { start: adjustedStart, end: adjustedEnd },
-      })
-      
-      // Fechar após seleção
-      setTimeout(() => setIsDatePickerOpen(false), 200)
-    }
-  }
-
-  // Calcular períodos pré-definidos
-  const getDateRangeForPreset = (preset: DateRangePreset): { start: Date; end: Date } => {
-    const end = new Date()
-    end.setHours(23, 59, 59, 999)
-    const start = new Date()
-
-    switch (preset) {
-      case 'last7days':
-        start.setDate(start.getDate() - 7)
-        start.setHours(0, 0, 0, 0)
-        break
-      case 'thisMonth':
-        start.setDate(1)
-        start.setHours(0, 0, 0, 0)
-        break
-      case 'thisQuarter':
-        // Últimos 3 meses a partir de hoje
-        start.setMonth(start.getMonth() - 3)
-        start.setHours(0, 0, 0, 0)
-        break
-      case 'thisYear':
-        start.setMonth(0, 1)
-        start.setHours(0, 0, 0, 0)
-        break
-      default:
-        // Para custom, manter as datas atuais
-        start.setDate(start.getDate() - 30)
-        start.setHours(0, 0, 0, 0)
-    }
-
-    return { start, end }
-  }
-
-  // Detectar qual preset está ativo baseado nas datas
-  const getCurrentPreset = (): DateRangePreset => {
-    if (!filters.dateRange) return 'last7days'
-    
-    // Se o calendário customizado foi usado, retornar 'custom' para ignorar o dropdown
-    if (isCustomDateRange) {
-      return 'custom'
-    }
-    
-    const start = new Date(filters.dateRange.start)
-    const end = new Date(filters.dateRange.end)
-    const now = new Date()
-    
-    // Normalizar datas para comparação (apenas data, sem hora)
-    const normalizeDate = (date: Date) => {
-      const d = new Date(date)
-      d.setHours(0, 0, 0, 0)
-      return d.getTime()
-    }
-    
-    const startTime = normalizeDate(start)
-    const endTime = normalizeDate(end)
-    const nowTime = normalizeDate(now)
-    
-    // Verificar se é "Últimos 7 dias"
-    const last7Days = new Date()
-    last7Days.setDate(last7Days.getDate() - 7)
-    const last7DaysTime = normalizeDate(last7Days)
-    if (startTime === last7DaysTime && endTime >= nowTime - 86400000) {
-      return 'last7days'
-    }
-    
-    // Verificar se é "Este Mês"
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const thisMonthStartTime = normalizeDate(thisMonthStart)
-    if (startTime === thisMonthStartTime && endTime >= nowTime - 86400000) {
-      return 'thisMonth'
-    }
-    
-    // Verificar se é "Este Trimestre" (últimos 3 meses)
-    const threeMonthsAgo = new Date(now)
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    const threeMonthsAgoTime = normalizeDate(threeMonthsAgo)
-    // Aceitar uma margem de ±2 dias para compensar diferenças de cálculo
-    const daysDiff = Math.abs((startTime - threeMonthsAgoTime) / (1000 * 60 * 60 * 24))
-    if (daysDiff <= 2 && endTime >= nowTime - 86400000) {
-      return 'thisQuarter'
-    }
-    
-    // Verificar se é "Este Ano"
-    const thisYearStart = new Date(now.getFullYear(), 0, 1)
-    const thisYearStartTime = normalizeDate(thisYearStart)
-    if (startTime === thisYearStartTime && endTime >= nowTime - 86400000) {
-      return 'thisYear'
-    }
-    
-    // Se não corresponde a nenhum preset, usar "Últimos 7 dias" como padrão
-    return 'last7days'
-  }
-
-  const handlePresetChange = (preset: DateRangePreset) => {
-    if (preset === 'custom') {
-      // Para custom, manter as datas atuais ou usar um período padrão
-      return
-    }
-    
-    // Resetar o estado custom quando usar o dropdown
-    setIsCustomDateRange(false)
-    
-    const { start, end } = getDateRangeForPreset(preset)
-    
-     // Log simples do período selecionado
-    console.log(
-      `period preset=${preset} start=${start.toISOString()} end=${end.toISOString()}`,
-    )
-    
+  const handleDateChange = (start: Date, end: Date) => {
     onFiltersChange({
       ...filters,
       dateRange: { start, end },
     })
   }
+
+  const handleDateSelect = (date: Date) => {
+    const start = filters.dateRange?.start ? new Date(filters.dateRange.start) : null
+    const end = filters.dateRange?.end ? new Date(filters.dateRange.end) : null
+
+    // Normalizar as datas para comparar apenas dia/mês/ano (sem hora)
+    const normalizeDate = (d: Date) => {
+      const normalized = new Date(d)
+      normalized.setHours(0, 0, 0, 0)
+      return normalized
+    }
+
+    const normalizedDate = normalizeDate(date)
+    const normalizedStart = start ? normalizeDate(start) : null
+    const normalizedEnd = end ? normalizeDate(end) : null
+
+    // Se não há data inicial, definir como inicial
+    if (!normalizedStart) {
+      handleDateChange(date, date)
+      setIsSelectingEnd(true) // Próximo clique será para definir a data final
+      return
+    }
+
+    // Se há data inicial mas não há final, ou se ambas são iguais
+    if (!normalizedEnd || (normalizedStart && normalizedEnd && isSameDay(normalizedStart, normalizedEnd))) {
+      // Se a data clicada é igual à inicial e ainda não há final definida, não fazer nada
+      if (isSameDay(normalizedDate, normalizedStart) && !normalizedEnd) {
+        return
+      }
+      
+      // Se a data clicada é anterior à inicial, trocar (nova vira inicial, antiga vira final)
+      if (isBefore(normalizedDate, normalizedStart)) {
+        handleDateChange(date, start!)
+        setIsSelectingEnd(false) // Resetar para começar nova seleção
+      } else {
+        // Caso contrário, definir como final
+        handleDateChange(start!, date)
+        setIsSelectingEnd(false) // Resetar para começar nova seleção
+      }
+      return
+    }
+
+    // Se ambas as datas estão selecionadas, começar uma nova seleção
+    // Nova seleção - começar do zero
+    handleDateChange(date, date)
+    setIsSelectingEnd(true) // Próximo clique será para definir a data final
+  }
+
+  const handleStartDateInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) {
+      const date = new Date(e.target.value)
+      const end = filters.dateRange?.end ? new Date(filters.dateRange.end) : date
+      handleDateChange(date, end)
+      setCurrentMonth(date)
+    }
+  }
+
+  const handleEndDateInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) {
+      const date = new Date(e.target.value)
+      const start = filters.dateRange?.start ? new Date(filters.dateRange.start) : date
+      if (isBefore(date, start)) {
+        handleDateChange(date, start)
+      } else {
+        handleDateChange(start, date)
+      }
+      setCurrentMonth(date)
+    }
+  }
+
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    setCurrentMonth(prev => direction === 'next' ? addMonths(prev, 1) : subMonths(prev, 1))
+  }
+
+  // Gerar dias do calendário
+  const monthStart = startOfMonth(currentMonth)
+  const monthEnd = endOfMonth(currentMonth)
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 })
+  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
+  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd })
+
+  const startDate = filters.dateRange?.start ? new Date(filters.dateRange.start) : null
+  const endDate = filters.dateRange?.end ? new Date(filters.dateRange.end) : null
+  const today = new Date()
 
   const handleNucleoChange = (nucleo: Nucleo | null) => {
     onFiltersChange({
@@ -318,17 +180,6 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
     })
   }
 
-  const handleStatusChange = (status: OrcamentoStatusFilter | null) => {
-    onFiltersChange({
-      ...filters,
-      status,
-    })
-  }
-
-  // Determinar quais filtros mostrar baseado na aba ativa
-  const showVendedorArquiteto = activeTab !== 'status'
-  const showStatus = activeTab === 'status'
-
   return (
     <header className="dashboard-header">
       <div className="header-container">
@@ -341,165 +192,124 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
             />
             <div className="header-title-wrapper">
               <h3 className="page-title">Dashboard Executivo - CRM</h3>
-              <p className="page-subtitle">
-                {activeTab === 'status' && 'Status de Projetos - Visão Geral do Pipeline'}
-                {activeTab === 'margin' && 'Margem & Rentabilidade - Análise de margens'}
-                {activeTab === 'performance' && 'Performance Comercial - Vendedores e arquitetos'}
-                {activeTab === 'rankings' && 'TOP 10 Rankings - Produtos e clientes'}
-              </p>
+              <p className="page-subtitle">Status de Projetos - Visão Geral do Pipeline</p>
             </div>
           </div>
-          <div className="header-right-group" ref={datePickerRef}>
-            <button
-              type="button"
-              className="date-button"
-              onClick={() => {
-                setIsDatePickerOpen(!isDatePickerOpen)
-              }}
-            >
-              <svg 
-                className="calendar-icon" 
-                width="16" 
-                height="16" 
-                viewBox="0 0 16 16" 
-                fill="none" 
-                xmlns="http://www.w3.org/2000/svg"
+          <div className="header-right-group">
+            <div style={{ position: 'relative' }} ref={datePickerRef}>
+              <button 
+                className="date-button"
+                onClick={() => setShowDatePicker(!showDatePicker)}
               >
-                <path 
-                  d="M12.6667 2.66667H3.33333C2.59695 2.66667 2 3.26362 2 4V13.3333C2 14.0697 2.59695 14.6667 3.33333 14.6667H12.6667C13.403 14.6667 14 14.0697 14 13.3333V4C14 3.26362 13.403 2.66667 12.6667 2.66667Z" 
-                  stroke="currentColor" 
-                  strokeWidth="1.5" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-                <path 
-                  d="M10.6667 1.33334V4.00001" 
-                  stroke="currentColor" 
-                  strokeWidth="1.5" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-                <path 
-                  d="M5.33333 1.33334V4.00001" 
-                  stroke="currentColor" 
-                  strokeWidth="1.5" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-                <path 
-                  d="M2 6.66667H14" 
-                  stroke="currentColor" 
-                  strokeWidth="1.5" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <span>{formatDateRangeLabel()}</span>
-              <svg 
-                className="chevron-icon" 
-                width="16" 
-                height="16" 
-                viewBox="0 0 16 16" 
-                fill="none" 
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path 
-                  d="M4 6L8 10L12 6" 
-                  stroke="currentColor" 
-                  strokeWidth="1.5" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-            {isDatePickerOpen && (
-              <div className="date-picker-wrapper">
-                <DatePicker
-                  selected={startDate}
-                  onChange={handleDateChange}
-                  startDate={startDate}
-                  endDate={endDate}
-                  selectsRange
-                  inline
-                  locale="pt-BR"
-                  dateFormat="d 'de' MMM 'de' yyyy"
-                  minDate={undefined}
-                  maxDate={undefined}
-                  shouldCloseOnSelect={false}
-                  renderCustomHeader={({
-                    date,
-                    decreaseMonth,
-                    increaseMonth,
-                    prevMonthButtonDisabled,
-                    nextMonthButtonDisabled,
-                  }) => {
-                    const formatDate = (d: Date | null) => {
-                      if (!d) return '--'
-                      return d.toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      })
-                    }
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="calendar-icon">
+                  <path d="M8 2v4"></path>
+                  <path d="M16 2v4"></path>
+                  <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                  <path d="M3 10h18"></path>
+                </svg>
+                {formatDateRange()}
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="chevron-icon">
+                  <path d="m6 9 6 6 6-6"></path>
+                </svg>
+              </button>
+              {showDatePicker && (
+                <div className="custom-date-picker">
+                  <div className="date-picker-inputs">
+                    <div className="date-input-wrapper">
+                      <label className="date-input-label">Data Inicial</label>
+                      <input
+                        type="date"
+                        className="date-input"
+                        value={startDate ? format(startDate, 'yyyy-MM-dd') : ''}
+                        onChange={handleStartDateInput}
+                      />
+                    </div>
+                    <div className="date-input-wrapper">
+                      <label className="date-input-label">Data Final</label>
+                      <input
+                        type="date"
+                        className="date-input"
+                        value={endDate ? format(endDate, 'yyyy-MM-dd') : ''}
+                        onChange={handleEndDateInput}
+                      />
+                    </div>
+                  </div>
+                  <div className="calendar-container">
+                    <div className="calendar-header">
+                      <button 
+                        className="calendar-nav-button"
+                        onClick={() => navigateMonth('prev')}
+                        type="button"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m15 18-6-6 6-6"></path>
+                        </svg>
+                      </button>
+                      <h3 className="calendar-month-year">
+                        {format(currentMonth, 'MMM yyyy', { locale: ptBR })}
+                      </h3>
+                      <button 
+                        className="calendar-nav-button"
+                        onClick={() => navigateMonth('next')}
+                        type="button"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m9 18 6-6-6-6"></path>
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="calendar-weekdays">
+                      {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(day => (
+                        <div key={day} className="calendar-weekday">{day}</div>
+                      ))}
+                    </div>
+                    <div className="calendar-days">
+                      {days.map((day, idx) => {
+                        const isCurrentMonth = isSameMonth(day, currentMonth)
+                        
+                        // Normalizar datas para comparação (apenas dia/mês/ano)
+                        const normalizeForComparison = (d: Date) => {
+                          const normalized = new Date(d)
+                          normalized.setHours(0, 0, 0, 0)
+                          return normalized
+                        }
+                        
+                        const normalizedDay = normalizeForComparison(day)
+                        const normalizedStart = startDate ? normalizeForComparison(startDate) : null
+                        const normalizedEnd = endDate ? normalizeForComparison(endDate) : null
+                        
+                        // Verificar se é data inicial ou final
+                        const isStart = normalizedStart && isSameDay(normalizedDay, normalizedStart)
+                        const isEnd = normalizedEnd && isSameDay(normalizedDay, normalizedEnd) && !isStart // Se for ambas, priorizar start
+                        
+                        const isToday = isSameDay(day, today)
+                        
+                        // Verificar se está no intervalo (entre start e end, excluindo os próprios start e end)
+                        const isInRange = normalizedStart && normalizedEnd && 
+                          !isSameDay(normalizedStart, normalizedEnd) && // Só mostrar range se forem diferentes
+                          isWithinInterval(day, { start: startDate!, end: endDate! }) &&
+                          !isStart && !isEnd
 
-                    return (
-                      <div className="react-datepicker__custom-header">
-                        <div className="react-datepicker__header-top">
+                        return (
                           <button
+                            key={idx}
+                            className={`calendar-day ${!isCurrentMonth ? 'calendar-day-other-month' : ''} ${isStart ? 'calendar-day-start' : ''} ${isEnd ? 'calendar-day-end' : ''} ${isInRange ? 'calendar-day-in-range' : ''} ${isToday && !isStart && !isEnd && !isInRange ? 'calendar-day-today' : ''}`}
+                            onClick={() => handleDateSelect(day)}
+                            disabled={!isCurrentMonth}
                             type="button"
-                            onClick={decreaseMonth}
-                            disabled={prevMonthButtonDisabled}
-                            className="react-datepicker__navigation react-datepicker__navigation--previous"
                           >
-                            <span className="react-datepicker__navigation-icon react-datepicker__navigation-icon--previous">
-                              {'<'}
-                            </span>
+                            {format(day, 'd')}
                           </button>
-                          <span className="react-datepicker__current-month">
-                            {date.toLocaleDateString('pt-BR', {
-                              month: 'long',
-                              year: 'numeric',
-                            }).replace(' de ', ' ')}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={increaseMonth}
-                            disabled={nextMonthButtonDisabled}
-                            className="react-datepicker__navigation react-datepicker__navigation--next"
-                          >
-                            <span className="react-datepicker__navigation-icon react-datepicker__navigation-icon--next">
-                              {'>'}
-                            </span>
-                          </button>
-                        </div>
-                        <div className="react-datepicker__header-dates">
-                          <span className="react-datepicker__start-date">
-                            Início: {formatDate(startDate)}
-                          </span>
-                          <span className="react-datepicker__end-date">
-                            Fim: {formatDate(endDate)}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  }}
-                />
-              </div>
-            )}
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="header-filters">
-          <select
-            className="filter-button"
-            value={getCurrentPreset()}
-            onChange={(e) => handlePresetChange(e.target.value as DateRangePreset)}
-          >
-            <option value="last7days">Últimos 7 dias</option>
-            <option value="thisMonth">Este Mês</option>
-            <option value="thisQuarter">Este Trimestre</option>
-            <option value="thisYear">Este Ano</option>
-            {isCustomDateRange && <option value="custom">Período Customizado</option>}
-          </select>
           <select
             className="filter-button"
             value={filters.nucleo || ''}
@@ -520,45 +330,29 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
               <option key={loja.id} value={loja.id}>{loja.name}</option>
             ))}
           </select>
-          {showStatus && (
-            <select
-              className="filter-button"
-              value={filters.status || ''}
-              onChange={(e) => handleStatusChange(e.target.value as OrcamentoStatusFilter || null)}
-            >
-              <option value="">Todos Status</option>
-              <option value="Em Aprovação">Em Aprovação</option>
-              <option value="Enviado">Enviado</option>
-              <option value="Aprovado">Aprovado</option>
-              <option value="Reprovado">Reprovado</option>
-            </select>
-          )}
-          {showVendedorArquiteto && (
-            <>
-              <select
-                className="filter-button"
-                value={filters.vendedor || ''}
-                onChange={(e) => handleVendedorChange(e.target.value || null)}
-              >
-                <option value="">Todos Vendedores</option>
-                {filterOptions.vendedores.map(vendedor => (
-                  <option key={vendedor.id} value={vendedor.id}>{vendedor.name}</option>
-                ))}
-              </select>
-              <select
-                className="filter-button"
-                value={filters.arquiteto || ''}
-                onChange={(e) => handleArquitetoChange(e.target.value || null)}
-              >
-                <option value="">Todos Arquitetos</option>
-                {filterOptions.arquitetos.map(arquiteto => (
-                  <option key={arquiteto.id} value={arquiteto.id}>{arquiteto.name}</option>
-                ))}
-              </select>
-            </>
-          )}
+          <select
+            className="filter-button"
+            value={filters.vendedor || ''}
+            onChange={(e) => handleVendedorChange(e.target.value || null)}
+          >
+            <option value="">Todos Vendedores</option>
+            {filterOptions.vendedores.map(vendedor => (
+              <option key={vendedor.id} value={vendedor.id}>{vendedor.name}</option>
+            ))}
+          </select>
+          <select
+            className="filter-button"
+            value={filters.arquiteto || ''}
+            onChange={(e) => handleArquitetoChange(e.target.value || null)}
+          >
+            <option value="">Todos Arquitetos</option>
+            {filterOptions.arquitetos.map(arquiteto => (
+              <option key={arquiteto.id} value={arquiteto.id}>{arquiteto.name}</option>
+            ))}
+          </select>
         </div>
       </div>
     </header>
   )
 }
+

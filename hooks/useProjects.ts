@@ -32,7 +32,7 @@ export function useProjects(filters: DashboardFilters): UseProjectsReturn {
       // Aplicar filtro de status dos orçamentos se houver
       if (filters.status) {
         const filtered = await filterProjectsByOrcamentoStatus(allProjects, filters.status)
-        setFilteredProjects(filtered)
+      setFilteredProjects(filtered)
       } else {
         // Sem filtro de status, usar todos os projetos
         setFilteredProjects(allProjects)

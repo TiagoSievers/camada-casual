@@ -248,7 +248,7 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
   return (
     <div className="funnel-section">
       <div className="funnel-header">
-          <div className="funnel-title-section">
+        <div className="funnel-title-section">
           <h3 className="funnel-title">Análise de Funil de Projetos</h3>
           <p className="funnel-subtitle">Fluxo de criação e conversão</p>
         </div>
@@ -308,7 +308,7 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
         </div>
       )}
       
-      <div className="funnel-content">
+        <div className="funnel-content">
           <div className="funnel-main-row">
             {/* Projetos Criados */}
             <div className="funnel-card large orange" style={{ width: '280px' }}>

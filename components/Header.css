@@ -403,6 +403,205 @@
   border-color: var(--accent);
 }
 
+/* Custom Date Picker Styles */
+.custom-date-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  padding: 12px;
+  z-index: 1000;
+  min-width: 280px;
+}
+
+.date-picker-inputs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.date-input-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.date-input-label {
+  font-size: 11px;
+  color: oklch(0.5 0 0);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.date-input {
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.date-input:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+}
+
+.calendar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+  margin-bottom: 4px;
+}
+
+.calendar-nav-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: oklch(0.5 0 0);
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.calendar-nav-button:hover {
+  background: oklch(0.961 0 0);
+}
+
+.calendar-nav-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.calendar-month-year {
+  font-size: 13px;
+  font-weight: 600;
+  color: oklch(0.278 0 0);
+  text-transform: capitalize;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.calendar-weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: oklch(0.5 0 0);
+  padding: 4px 0;
+  letter-spacing: 0.02em;
+}
+
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: oklch(0.278 0 0);
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  min-height: 28px;
+}
+
+.calendar-day:hover:not(:disabled) {
+  background: oklch(0.961 0 0);
+}
+
+.calendar-day:disabled {
+  color: oklch(0.8 0 0);
+  cursor: not-allowed;
+}
+
+.calendar-day-other-month {
+  color: oklch(0.7 0 0);
+}
+
+.calendar-day-today {
+  font-weight: 600;
+  position: relative;
+}
+
+.calendar-day-today:not(.calendar-day-start):not(.calendar-day-end):not(.calendar-day-in-range)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ff0000;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.calendar-day-start {
+  background-color: #ff6b35 !important;
+  color: white !important;
+  font-weight: 600;
+  border-radius: 4px 0 0 4px;
+  z-index: 2;
+}
+
+.calendar-day-end {
+  background-color: #0066cc !important;
+  color: white !important;
+  font-weight: 600;
+  border-radius: 0 4px 4px 0;
+  z-index: 2;
+}
+
+.calendar-day-in-range {
+  background-color: #4da6ff !important;
+  color: white !important;
+  border-radius: 0;
+  z-index: 1;
+}
+
+/* Quando a data inicial e final são iguais, mostrar apenas como inicial (laranja) */
+.calendar-day-start.calendar-day-end {
+  background-color: #ff6b35 !important;
+  border-radius: 4px;
+  z-index: 3;
+}
+
 @media (max-width: 768px) {
   .header-filters {
     flex-direction: column;
@@ -415,6 +614,12 @@
   
   .date-range {
     margin-left: 0;
+  }
+
+  .custom-date-picker {
+    right: auto;
+    left: 0;
+    min-width: 280px;
   }
 }
 
