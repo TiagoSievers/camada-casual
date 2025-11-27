@@ -112,7 +112,6 @@ export default function DashboardPage() {
           filters={filters}
           filterOptions={filterOptions}
           onFiltersChange={setFilters}
-          activeTab={activeTab}
         />
         <div className="dashboard-content">
           {renderContent()}
