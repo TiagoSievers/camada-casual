@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import DatePicker, { registerLocale } from 'react-datepicker'
-import { ptBR } from 'date-fns/locale/pt-BR'
+import ptBR from 'date-fns/locale/pt-BR'
 import 'react-datepicker/dist/react-datepicker.css'
 import './Header.css'
 import type { DashboardFilters, FilterOptions, Nucleo, OrcamentoStatusFilter } from '@/types/dashboard'
