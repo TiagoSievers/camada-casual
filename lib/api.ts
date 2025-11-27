@@ -17,43 +17,65 @@ function logApiDisabled(endpoint: string) {
 }
 
 /**
- * Limpa todos os caches do localStorage ao carregar/atualizar a página
- * Executado ao carregar o módulo (quando a página carrega)
+ * Limpa TODOS os caches do localStorage ao atualizar a página
+ * Detecta refresh usando Performance Navigation API ou sessionStorage
  */
-function clearAllCachesOnPageLoad() {
+function clearAllCachesOnRefresh() {
   if (typeof window === 'undefined') return
 
   try {
-    // Lista de prefixos de chaves de cache
-    const cachePrefixes = [
-      'casual_crm_projetos_cache_',
-      'casual_crm_orcamentos_cache_',
-      'casual_crm_vendedores_cache',
-      'casual_crm_arquitetos_cache',
-      'casual_crm_clientes_cache',
-      'casual_crm_lojas_cache',
-      'performance_cache_',
-    ]
+    let shouldClear = false
 
-    // Coletar todas as chaves a serem removidas
-    const keysToRemove: string[] = []
-
-    // Iterar sobre todas as chaves do localStorage
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (!key) continue
-
-      // Verificar se é uma chave de cache
-      const isCacheKey = cachePrefixes.some(prefix => key.startsWith(prefix))
-      if (isCacheKey) {
-        keysToRemove.push(key)
+    // Tentar detectar reload usando Performance Navigation API
+    try {
+      const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
+      if (navigation) {
+        // type pode ser: 'navigate', 'reload', 'back_forward', ou 'prerender'
+        shouldClear = navigation.type === 'reload'
+      }
+    } catch (error) {
+      // Fallback: usar sessionStorage para detectar primeira execução
+      const cacheClearedKey = 'casual_crm_cache_cleared_flag'
+      const wasCleared = sessionStorage.getItem(cacheClearedKey)
+      
+      // Se não foi limpo ainda, é primeira execução = refresh
+      if (!wasCleared) {
+        shouldClear = true
+        sessionStorage.setItem(cacheClearedKey, 'true')
       }
     }
 
-    // Remover todas as chaves de cache
-    keysToRemove.forEach(key => {
-      localStorage.removeItem(key)
-    })
+    // Se for reload OU primeira execução, limpar TODOS os caches
+    if (shouldClear) {
+      // Lista de prefixos de chaves de cache
+      const cachePrefixes = [
+        'casual_crm_projetos_cache_',
+        'casual_crm_orcamentos_cache_',
+        'casual_crm_vendedores_cache',
+        'casual_crm_arquitetos_cache',
+        'casual_crm_clientes_cache',
+        'casual_crm_lojas_cache',
+        'performance_cache_',
+      ]
+
+      // Coletar todas as chaves de cache para remover
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (!key) continue
+
+        // Verificar se é uma chave de cache
+        const isCacheKey = cachePrefixes.some(prefix => key.startsWith(prefix))
+        if (isCacheKey) {
+          keysToRemove.push(key)
+        }
+      }
+
+      // Remover todas as chaves de cache
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key)
+      })
+    }
   } catch (error) {
     // Ignorar erros ao limpar cache
   }
@@ -78,6 +100,7 @@ function clearExpiredCaches() {
       'casual_crm_arquitetos_cache',
       'casual_crm_clientes_cache',
       'casual_crm_lojas_cache',
+      'performance_cache_',
     ]
 
     // Iterar sobre todas as chaves do localStorage
@@ -114,7 +137,9 @@ function clearExpiredCaches() {
 
 // Limpar TODOS os caches ao carregar o módulo (quando a página carrega/atualiza)
 if (typeof window !== 'undefined') {
-  clearAllCachesOnPageLoad()
+  clearAllCachesOnRefresh()
+  // Também limpar caches expirados periodicamente
+  clearExpiredCaches()
 }
 
 /**
@@ -458,19 +483,19 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
 
       // Constraints de data (copiados a cada página)
       url.searchParams.set('constraints', JSON.stringify(baseConstraints))
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`Erro ao buscar projetos: ${response.statusText}`)
-      }
-
-      const data: ProjectsResponse = await response.json()
+    
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Erro ao buscar projetos: ${response.statusText}`)
+    }
+    
+    const data: ProjectsResponse = await response.json()
       const results = data.response.results || []
       const remaining = data.response.remaining ?? 0
 
@@ -497,7 +522,7 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
           localStorage.setItem(cacheKey, JSON.stringify(allProjects))
           localStorage.setItem(timestampKey, Date.now().toString())
         }
-      } catch (error) {
+  } catch (error) {
         // Ignorar erros ao salvar cache
       }
     }
@@ -587,8 +612,8 @@ export function projectMatchesStatusFilter(
     }
   }
   
-  return false
-}
+        return false
+      }
 
 /**
  * Filtra projetos baseado no status dos orçamentos
@@ -718,8 +743,8 @@ function extractVendedorIds(project: Project): string[] {
 // apenas para compatibilidade, retornando resultados vazios.
 export async function fetchOrcamentos(orcamentoIds: string[]): Promise<Orcamento[]> {
   void orcamentoIds
-  return []
-}
+    return []
+  }
 
 /**
  * Busca todos os orçamentos relacionados aos projetos fornecidos
@@ -898,19 +923,19 @@ export async function fetchAllOrcamentos(filters?: {
           console.log(`curl -X GET '${url.toString()}' -H 'Content-Type: application/json'`)
         }
       }
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`Erro ao buscar orçamentos: ${response.statusText}`)
-      }
-
-      const data: OrcamentosResponse = await response.json()
+    
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Erro ao buscar orçamentos: ${response.statusText}`)
+    }
+    
+    const data: OrcamentosResponse = await response.json()
 
       // Log simples do resumo retornado pela API (count / remaining) - apenas na primeira página
       if (pageNumber === 1 && data && data.response) {
@@ -943,7 +968,7 @@ export async function fetchAllOrcamentos(filters?: {
       // Por padrão, excluir removidos
       orcamentos = orcamentos.filter(orc => orc.removido !== true)
     }
-
+    
     // Filtrar por status (se pedido)
     if (filters?.status && filters.status.length > 0) {
       orcamentos = orcamentos.filter(orc => {
@@ -951,7 +976,7 @@ export async function fetchAllOrcamentos(filters?: {
         return filters.status!.some(s => status.includes(s.toLowerCase()))
       })
     }
-
+    
     // Salvar no cache se não for período customizado e se a chave ainda não existir
     // Salvar os dados completos (antes dos filtros de removido/status) para reutilização
     if (cacheKey && timestampKey && typeof window !== 'undefined') {
@@ -969,7 +994,7 @@ export async function fetchAllOrcamentos(filters?: {
         // Ignorar erros ao salvar cache
       }
     }
-
+    
     return orcamentos
   } catch (error) {
     console.error('Erro ao buscar orçamentos:', error)
@@ -1093,7 +1118,7 @@ export async function fetchVendedores(forceRefresh: boolean = false): Promise<Ve
         
         // Cache válido por 30 minutos
         if (ageInMinutes < 30) {
-          return vendedores
+        return vendedores
         }
       }
     } catch (error) {
@@ -1151,8 +1176,8 @@ export async function fetchVendedores(forceRefresh: boolean = false): Promise<Ve
         const existingCache = localStorage.getItem(STORAGE_KEY)
         if (!existingCache) {
           // Só salvar se não existir (não sobrescrever)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(allVendedores))
-          localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(allVendedores))
+        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
         }
       } catch (error) {
         // Ignorar erros ao salvar cache
@@ -1201,7 +1226,7 @@ export async function fetchArquitetos(forceRefresh: boolean = false): Promise<Ar
         
         // Cache válido por 30 minutos
         if (ageInMinutes < 30) {
-          return arquitetos
+        return arquitetos
         }
       }
     } catch (error) {
@@ -1259,8 +1284,8 @@ export async function fetchArquitetos(forceRefresh: boolean = false): Promise<Ar
         const existingCache = localStorage.getItem(STORAGE_KEY)
         if (!existingCache) {
           // Só salvar se não existir (não sobrescrever)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(allArquitetos))
-          localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(allArquitetos))
+        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
         }
       } catch (error) {
         // Ignorar erros ao salvar cache
@@ -1309,7 +1334,7 @@ export async function fetchClientes(forceRefresh: boolean = false): Promise<Clie
         
         // Cache válido por 30 minutos
         if (ageInMinutes < 30) {
-          return clientes
+        return clientes
         }
       }
     } catch (error) {
@@ -1413,7 +1438,7 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
         
         // Cache válido por 30 minutos
         if (ageInMinutes < 30) {
-          return lojas
+        return lojas
         }
       }
     } catch (error) {
@@ -1471,8 +1496,8 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
         const existingCache = localStorage.getItem(STORAGE_KEY)
         if (!existingCache) {
           // Só salvar se não existir (não sobrescrever)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(allLojas))
-          localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(allLojas))
+        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
         }
       } catch (error) {
         // Ignorar erros ao salvar cache
@@ -1699,13 +1724,13 @@ export async function calculateFunnelMetrics(
             }
           : undefined,
       )
-      
-      // Filtrar apenas os orçamentos relacionados aos projetos
-      allOrcamentos.forEach(orcamento => {
-        if (orcamentoIdsSet.has(orcamento._id)) {
-          orcamentosMap.set(orcamento._id, orcamento)
-        }
-      })
+  
+  // Filtrar apenas os orçamentos relacionados aos projetos
+  allOrcamentos.forEach(orcamento => {
+    if (orcamentoIdsSet.has(orcamento._id)) {
+      orcamentosMap.set(orcamento._id, orcamento)
+    }
+  })
     } else {
       // Página Status de Projetos: buscar apenas os orçamentos dos projetos (sem filtro de data)
       // Buscar orçamentos por IDs usando constraint "in"
@@ -1799,28 +1824,28 @@ export async function calculateFunnelMetrics(
         
         if (orcamento.status) {
           const statusLower = status.toLowerCase().trim()
-          
-          // Verificar se foi enviado (qualquer status que indique envio)
+        
+        // Verificar se foi enviado (qualquer status que indique envio)
           const isSent = sentStatuses.some(s => statusLower.includes(s.toLowerCase())) ||
                         statusLower.includes('enviado') ||
                         statusLower.includes('aprovado') ||
                         statusLower.includes('reprovado') ||
                         statusLower.includes('liberado')
-          
-          if (isSent) {
-            hasSent = true
-          }
-          
-          // Verificar status específicos (mais específicos primeiro)
+        
+        if (isSent) {
+          hasSent = true
+        }
+        
+        // Verificar status específicos (mais específicos primeiro)
           if (statusLower.includes('reprovado')) {
-            hasRejected = true
+          hasRejected = true
           } else if (statusLower.includes('aprovado pelo cliente') || 
                      statusLower.includes('aprovado') && !statusLower.includes('reprovado')) {
-            hasApproved = true
+          hasApproved = true
           } else if (statusLower.includes('em aprovação') || 
                      (statusLower.includes('aprovação') && !statusLower.includes('aprovado') && !statusLower.includes('reprovado'))) {
-            hasInApproval = true
-          }
+          hasInApproval = true
+        }
         }
       } else {
         // Orçamento não encontrado no mapa (pode ter sido removido ou não existe)

@@ -1,0 +1,88 @@
+Documentação do Dashboard
+O documento detalha as principais funcionalidades do Dashboard Executivo
+Dashboard Executivo
+
+Link do protótipo: https://www.figma.com/make/c9oxDPZpgxM4IrU2w2Yt03/Casual-CRM---Dashboard-Executivo?node-id=0-1&p=f&t=si9X9Q6RB435OOAr-0
+Seção 1: Status de Projeto
+
+
+Filtros da parte superior
+Período: totalmente flexível, podendo escolher data de início e final do range
+Núcleo: representa um grupo de “lojas” com produtos semelhantes
+Lojas: lojas físicas da Casual:
+Vendedor: aqui deve incuir tanto “Vendedores” quanto “Gerentes”
+Arquiteto: arquiteto responsável pelo projeto
+No dashboard iremos apresentar tanto a visão de Funil Aberto quanto Funil Fechado, com a opção do usuário selecionar a visão que ele quiser ver
+Funil Aberto: considera todos os projetos criados (acumulado) até a data final do filtro
+Funil Fechado: considera apenas os projetos criados no filtro de data selecionado.
+Base de dados:
+Orçamento criado -> tabela “All orcamentos” -> um dos campos é “Create Date” e o outro é “status”, que coincide com o status do Kanban
+Data de criação é a referência para o filtro de data
+Projetos enviados -> deve somar tudo o que foi enviado ao cliente, ou seja, soma os seguintes status
+“Enviado ao cliente” 
+“Aprovado pelo cliente” 
+“Reprovado” 
+“Liberado para pedido”
+Em aprovação -> é um status da  tabela “All orcamentos”, representa projetos que ainda falta o cliente aprovar
+Aprovados -> é um status da  tabela “All orcamentos”, representa projetos que o cliente já aprovou
+Reprovados -> é um status da  tabela “All orcamentos”, representa projetos que o cliente reprovou
+Comparação mês x mês
+O funil deve permitir comparação vs. mês anterior sempre que o filtro selecionado representar um mês cheio. 
+A ideia é que, para todas as métricas apresentadas, tenha um comparativo ao lado com o valor do mês anterior e o delta %
+
+Seção 2: Margem e Rentabilidade
+
+
+
+Filtros se mantém da mesma forma como na seção de “Status dos Projetos”
+Cálculo de margem se dá como: (Rentabilidade / Faturamento Líquido)
+Faturamento Líquido = “Valor_final_produtos”
+É o valor dos produtos líquido de taxas
+Source: Tabela “orcamentos”
+
+
+Rentabilidade = Faturamento Líquido - Custo do Produto
+Source: Tabela “item_orcamentos”
+Custo do Produto = “Custo_total”
+É o custo de compra do produto, ou, custo da mercadoria vendida (CMV)
+Na tabela, temos o campo “Orcamento” que faz menção ao respectivo orçamento
+
+Considerando as margens apresentadas no front do dashboard, devemos considerar o seguinte:
+Margem Geral = somatória (Rentabilidade) / somatória (Faturamento Líquido)
+Ou seja, não faz distinção entre cada orçamento, só pega o consolidado somando tudo
+Margem Ponderada Núcleos = média ponderada pelo Faturamento Líquido de cada núcleo
+= Σ(Margem_i × FaturamentoLíquido_i) / Σ(FaturamentoLíquido_i)
+Margem_i = margem de cada núcleo individual
+FaturamentoLíquido_i = faturamento líquido de cada núcleo individual
+Margem Ponderada Marcas = média ponderada pelo Faturamento Líquido de cada marca
+Segue a mesma lógica do núcleo, porém calculando os números financeiros para marcas
+Considerar “Marcas” como “fornecedores”
+Na tabela “Item_orcamento”, conseguimos puxar o custo relacionado ao “fornecedor” e ao “produto”. 
+
+
+
+
+Q&A - Dashboard
+
+
+Refletir os documentos da marca no Dashboard
+Inclusão do logo da Casual (alta resolução)
+
+
+
+Adicionar a paleta de cores da Casual
+Pedi para o figma make fazer as edições no mesmo link
+https://www.figma.com/make/c9oxDPZpgxM4IrU2w2Yt03/Casual-CRM---Dashboard-Executivo?node-id=0-1&p=f&t=5rLCEOsCJYAsysyd-0
+
+No filtro de data, eu escolho uma data e ele sempre pega o dia anterior. É possível selecionar o range de forma mais direta? Peguei o exemplo do Notion abaixo
+
+
+Nos filtros de lojas, vendedores e arquitetos, fazer um de-para com os nomes reais
+Tabela “lojas” -> “unique ID” -> “nome_da_loja”
+Tabela “vendedors” -> “unique ID” -> “nome”
+Um ponto importante é que existem duas categorias de vendedores que precisamos incluir aqui no filtro: “vendedors” e “gerentes”
+Tabela “Gerentes” -> unique ID” -> “nome”
+Tabela “arquitetos” -> “unique ID” -> “nome”
+
+Os status dos projetos enviados estão vindo zerados, precisamos checar a fonte se está correta
+

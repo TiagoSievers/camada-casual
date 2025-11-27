@@ -12,15 +12,12 @@
     "next": "^14.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-datepicker": "^4.25.0",
-    "date-fns": "^3.0.0",
     "recharts": "^3.4.1"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/react-datepicker": "^4.19.0",
     "typescript": "^5"
   }
 }
