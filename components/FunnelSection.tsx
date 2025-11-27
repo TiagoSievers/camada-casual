@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import './FunnelSection.css'
 import type { Project, DashboardFilters } from '@/types/dashboard'
-import { calculateFunnelMetrics } from '@/lib/api'
+import { calculateFunnelMetrics, fetchProjects } from '@/lib/api'
 
 interface FunnelSectionProps {
   /** Projetos filtrados pelo período (usado no Funil Fechado) */
@@ -51,6 +51,7 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
   })
   const [previousFunnelData, setPreviousFunnelData] = useState<typeof funnelData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [allProjectsUntilEndDate, setAllProjectsUntilEndDate] = useState<Project[]>([])
 
   // Helpers de datas
   const currentStartDate = useMemo(() => new Date(filters.dateRange.start), [filters.dateRange.start])
@@ -95,14 +96,45 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
     return projects
   }, [projects])
 
+  // Buscar todos os projetos até a data final para o Funil Aberto
+  useEffect(() => {
+    const loadAllProjectsUntilEndDate = async () => {
+      try {
+        // Buscar todos os projetos até a data final (sem limite de data inicial)
+        // Aplicar os filtros de núcleo, loja, vendedor e arquiteto, mas não limitar pela data inicial
+        const endDate = new Date(currentEndDate)
+        endDate.setHours(23, 59, 59, 999)
+        
+        const allProjectsData = await fetchProjects({
+          ...filters,
+          dateRange: {
+            // Data inicial muito antiga para pegar todos os projetos até a data final
+            start: new Date('2020-01-01'),
+            end: endDate,
+          },
+        })
+        setAllProjectsUntilEndDate(allProjectsData)
+      } catch (error) {
+        console.error('Erro ao buscar todos os projetos para Funil Aberto:', error)
+        // Em caso de erro, usar os projetos já carregados
+        setAllProjectsUntilEndDate(allProjects || [])
+      }
+    }
+
+    // Buscar sempre para ter os dados prontos quando o usuário alternar para Funil Aberto
+    loadAllProjectsUntilEndDate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentEndDate, filters.nucleo, filters.loja, filters.vendedor, filters.arquiteto])
+
   const openFunnelProjects = useMemo(() => {
-    // Funil Aberto: todos os projetos criados até a data final do filtro
-    return (allProjects || []).filter(project => {
+    // Funil Aberto: todos os projetos criados até a data final do filtro (acumulado)
+    // Usar allProjectsUntilEndDate que contém todos os projetos até a data final
+    return (allProjectsUntilEndDate.length > 0 ? allProjectsUntilEndDate : (allProjects || [])).filter(project => {
       const createdDate = getProjectCreatedDate(project)
       if (!createdDate) return false
       return createdDate <= currentEndDate
     })
-  }, [allProjects, currentEndDate])
+  }, [allProjectsUntilEndDate, allProjects, currentEndDate])
 
   const previousMonthClosedProjects = useMemo(() => {
     if (!previousMonthRange) return []
@@ -137,16 +169,11 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
 
       try {
         setLoading(true)
-        const metrics = await calculateFunnelMetrics(currentProjects, funnelType, comparePrevious)
+        // Página Status de Projetos: não buscar orçamentos com filtro de data, apenas pelos IDs dos projetos
+        const metrics = await calculateFunnelMetrics(currentProjects, funnelType, comparePrevious, filters.dateRange, false)
         setFunnelData(metrics)
-
-        // Calcular mês anterior apenas para Funil Fechado, quando for mês cheio e opção marcada
-        if (funnelType === 'closed' && comparePrevious && previousMonthClosedProjects.length > 0) {
-          const previousMetrics = await calculateFunnelMetrics(previousMonthClosedProjects, funnelType, false)
-          setPreviousFunnelData(previousMetrics)
-        } else {
-          setPreviousFunnelData(null)
-        }
+        // Não buscamos mais dados de comparação de mês anterior via API
+        setPreviousFunnelData(null)
       } catch (error) {
         console.error('Erro ao calcular métricas do funil:', error)
         // Em caso de erro, usar cálculo básico
@@ -203,6 +230,20 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
   const rejectedPreviousPercentage = previousFunnelData
     ? parseFloat(previousFunnelData.rejected.percentage.replace('%', '') || '0')
     : 0
+
+  if (loading) {
+    return (
+      <div className="funnel-section">
+        <div className="funnel-header">
+          <div className="funnel-title-section">
+            <h3 className="funnel-title">Análise de Funil de Projetos</h3>
+            <p className="funnel-subtitle">Fluxo de criação e conversão</p>
+          </div>
+        </div>
+        <div style={{ padding: '40px', textAlign: 'center' }}>Carregando dados...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="funnel-section">
@@ -267,8 +308,7 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
         </div>
       )}
       
-      {!showInfo && (
-        <div className="funnel-content">
+      <div className="funnel-content">
           <div className="funnel-main-row">
             {/* Projetos Criados */}
             <div className="funnel-card large orange" style={{ width: '280px' }}>
@@ -341,7 +381,6 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
           </div>
         </div>
       </div>
-      )}
     </div>
   )
 }

@@ -13,32 +13,42 @@ import { useFilterOptions } from '@/hooks/useFilterOptions'
 import type { DashboardFilters } from '@/types/dashboard'
 import './page.css'
 
+function createInitialFilters(): DashboardFilters {
+  const end = new Date()
+  end.setHours(23, 59, 59, 999)
+
+  const start = new Date()
+  start.setDate(start.getDate() - 7)
+  start.setHours(0, 0, 0, 0)
+
+  return {
+    dateRange: { start, end },
+    nucleo: null,
+    loja: null,
+    vendedor: null,
+    arquiteto: null,
+    status: null,
+  }
+}
+
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('status')
   
   // Inicializar filtros com período padrão (últimos 7 dias)
-  const [filters, setFilters] = useState<DashboardFilters>(() => {
-    const end = new Date()
-    end.setHours(23, 59, 59, 999)
-    const start = new Date()
-    start.setDate(start.getDate() - 7)
-    start.setHours(0, 0, 0, 0)
-    return {
-      dateRange: { start, end },
-      nucleo: null,
-      loja: null,
-      vendedor: null,
-      arquiteto: null,
-      status: null,
-    }
-  })
-
-  // Buscar opções de filtros
-  const { options: filterOptions, loading: optionsLoading } = useFilterOptions()
+  const [filters, setFilters] = useState<DashboardFilters>(() => createInitialFilters())
   
-  // Buscar projetos com filtros
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab)
+    // Sempre que trocar de seção, resetar todos os filtros para o estado inicial
+    setFilters(createInitialFilters())
+  }
+ 
+  // Buscar projetos com filtros (chamada ÚNICA de projetos)
   const { projects: allProjects, filteredProjects, loading: projectsLoading, error } = useProjects(filters)
+
+  // Buscar opções de filtros usando os projetos já carregados
+  const { options: filterOptions, loading: optionsLoading } = useFilterOptions(allProjects)
 
   const renderContent = () => {
     if (error) {
@@ -95,7 +105,7 @@ export default function DashboardPage() {
         isOpen={sidebarOpen} 
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
       />
       <div className="main-content" style={{ marginLeft: sidebarOpen ? '256px' : '0' }}>
         <Header 

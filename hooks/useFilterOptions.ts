@@ -1,9 +1,14 @@
 /**
- * Hook para buscar opções de filtros (núcleos, lojas, vendedores, arquitetos)
+ * Hook para montar opções de filtros (núcleos, lojas, vendedores, arquitetos)
+ * usando:
+ * - projetos já carregados (para núcleos)
+ * - APIs específicas (lojas, vendedores, arquitetos)
+ *
+ * Importante: este hook NÃO chama mais a API de projetos.
  */
 
 import { useState, useEffect } from 'react'
-import { fetchProjects, fetchLojas, fetchVendedores, fetchArquitetos } from '@/lib/api'
+import { fetchLojas, fetchVendedores, fetchArquitetos } from '@/lib/api'
 import type { Project, FilterOptions, Nucleo } from '@/types/dashboard'
 
 interface UseFilterOptionsReturn {
@@ -12,7 +17,7 @@ interface UseFilterOptionsReturn {
   error: string | null
 }
 
-export function useFilterOptions(): UseFilterOptionsReturn {
+export function useFilterOptions(projects: Project[]): UseFilterOptionsReturn {
   const [options, setOptions] = useState<FilterOptions>({
     nucleos: [],
     lojas: [],
@@ -28,10 +33,7 @@ export function useFilterOptions(): UseFilterOptionsReturn {
         setLoading(true)
         setError(null)
 
-        // Buscar projetos para extrair opções
-        const projects = await fetchProjects()
-
-        // Extrair núcleos únicos
+        // Extrair núcleos únicos a partir dos projetos recebidos
         const nucleosSet = new Set<Nucleo>()
         projects.forEach(project => {
           if (project.nucleo_lista) {
@@ -106,7 +108,7 @@ export function useFilterOptions(): UseFilterOptionsReturn {
     }
 
     loadOptions()
-  }, [])
+  }, [projects])
 
   return { options, loading, error }
 }

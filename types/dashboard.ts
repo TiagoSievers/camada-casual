@@ -83,7 +83,7 @@ export interface DashboardFilters {
   loja?: string | null
   vendedor?: string | null // ID consolidado de vendedor/gerenciador
   arquiteto?: string | null
-  status?: ProjectStatus | null // Status do projeto (Ativo, Pausado, Inativo)
+  status?: OrcamentoStatusFilter | null // Status do orçamento (Em Aprovação, Enviado, Aprovado, Reprovado)
 }
 
 // ============================================

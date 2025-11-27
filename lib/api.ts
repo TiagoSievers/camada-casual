@@ -7,6 +7,116 @@ import type { Project, ProjectsResponse, DashboardFilters, FunnelType, Orcamento
 
 const API_BASE_URL = 'https://crm.casualmoveis.com.br/api/1.1'
 
+// Flag global para desabilitar TODAS as chamadas de API deste módulo.
+// Para voltar a chamar a API de verdade, deixe como `false`.
+const API_DISABLED = false
+
+function logApiDisabled(endpoint: string) {
+  // Função mantida apenas por compatibilidade; não gera logs.
+  void endpoint
+}
+
+/**
+ * Limpa todos os caches do localStorage ao carregar/atualizar a página
+ * Executado ao carregar o módulo (quando a página carrega)
+ */
+function clearAllCachesOnPageLoad() {
+  if (typeof window === 'undefined') return
+
+  try {
+    // Lista de prefixos de chaves de cache
+    const cachePrefixes = [
+      'casual_crm_projetos_cache_',
+      'casual_crm_orcamentos_cache_',
+      'casual_crm_vendedores_cache',
+      'casual_crm_arquitetos_cache',
+      'casual_crm_clientes_cache',
+      'casual_crm_lojas_cache',
+      'performance_cache_',
+    ]
+
+    // Coletar todas as chaves a serem removidas
+    const keysToRemove: string[] = []
+
+    // Iterar sobre todas as chaves do localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key) continue
+
+      // Verificar se é uma chave de cache
+      const isCacheKey = cachePrefixes.some(prefix => key.startsWith(prefix))
+      if (isCacheKey) {
+        keysToRemove.push(key)
+      }
+    }
+
+    // Remover todas as chaves de cache
+    keysToRemove.forEach(key => {
+      localStorage.removeItem(key)
+    })
+  } catch (error) {
+    // Ignorar erros ao limpar cache
+  }
+}
+
+/**
+ * Limpa caches expirados (mais de 30 minutos) do localStorage
+ * Executado periodicamente para manter o localStorage limpo
+ */
+function clearExpiredCaches() {
+  if (typeof window === 'undefined') return
+
+  try {
+    const now = Date.now()
+    const thirtyMinutesInMs = 1000 * 60 * 30
+
+    // Lista de prefixos de chaves de cache
+    const cachePrefixes = [
+      'casual_crm_projetos_cache_',
+      'casual_crm_orcamentos_cache_',
+      'casual_crm_vendedores_cache',
+      'casual_crm_arquitetos_cache',
+      'casual_crm_clientes_cache',
+      'casual_crm_lojas_cache',
+    ]
+
+    // Iterar sobre todas as chaves do localStorage
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (!key) continue
+
+      // Verificar se é uma chave de cache
+      const isCacheKey = cachePrefixes.some(prefix => key.startsWith(prefix))
+      if (!isCacheKey) continue
+
+      // Se for uma chave de timestamp, verificar se expirou
+      if (key.endsWith('_timestamp')) {
+        try {
+          const timestamp = parseInt(localStorage.getItem(key) || '0', 10)
+          const ageInMs = now - timestamp
+
+          if (ageInMs > thirtyMinutesInMs) {
+            // Cache expirado, remover chave de dados e timestamp
+            const dataKey = key.replace('_timestamp', '')
+            localStorage.removeItem(dataKey)
+            localStorage.removeItem(key)
+          }
+        } catch (error) {
+          // Se houver erro ao ler timestamp, remover a chave
+          localStorage.removeItem(key)
+        }
+      }
+    }
+  } catch (error) {
+    // Ignorar erros ao limpar cache
+  }
+}
+
+// Limpar TODOS os caches ao carregar o módulo (quando a página carrega/atualiza)
+if (typeof window !== 'undefined') {
+  clearAllCachesOnPageLoad()
+}
+
 /**
  * Interface para orçamento da API
  */
@@ -156,35 +266,258 @@ export interface LojasResponse {
 }
 
 /**
- * Busca projetos da API com filtros opcionais
+ * Gera hash simples de uma string
+ */
+function hashString(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(36)
+}
+
+/**
+ * Gera chave de cache baseada em todos os filtros
+ * Inclui: período, status, núcleo, loja, vendedor, arquiteto
+ * Suporta períodos customizados do calendário
+ */
+function getCacheKeyForFilters(
+  filters: Partial<DashboardFilters> | undefined,
+  dataType: 'projetos' | 'orcamentos'
+): string | null {
+  if (!filters) {
+    // Sem filtros, usar período padrão
+    return `casual_crm_${dataType}_cache_${hashString('ultimos_7_dias')}`
+  }
+
+  // Verificar se é período customizado ou pré-definido
+  const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) : 'Últimos 7 dias'
+  
+  // Criar objeto com todos os filtros para gerar hash
+  const filterKey: any = {
+    status: filters.status || null,
+    nucleo: filters.nucleo || null,
+    loja: filters.loja || null,
+    vendedor: filters.vendedor || null,
+    arquiteto: filters.arquiteto || null,
+  }
+
+  // Se for período customizado, usar as datas exatas
+  if (!periodLabel && filters.dateRange) {
+    const start = new Date(filters.dateRange.start)
+    const end = new Date(filters.dateRange.end)
+    // Normalizar datas para garantir consistência (apenas data, sem hora)
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+    filterKey.periodo_customizado = {
+      start: start.toISOString().split('T')[0], // Apenas a data (YYYY-MM-DD)
+      end: end.toISOString().split('T')[0],
+    }
+  } else {
+    // Período pré-definido
+    filterKey.periodo = periodLabel || 'Últimos 7 dias'
+  }
+
+  // Gerar hash da combinação de filtros
+  const filterString = JSON.stringify(filterKey)
+  const hash = hashString(filterString)
+
+  return `casual_crm_${dataType}_cache_${hash}`
+}
+
+/**
+ * Gera chave de cache para orçamentos baseada nos filtros específicos
+ * Inclui: período, status (array), removido
+ * Suporta períodos customizados do calendário
+ */
+function getCacheKeyForOrcamentosFilters(filters?: {
+  dateRange?: { start: Date | string; end: Date | string }
+  status?: string[]
+  removido?: boolean
+}): string | null {
+  if (!filters?.dateRange) {
+    // Sem dateRange, não usar cache
+    return null
+  }
+
+  // Verificar se é período customizado ou pré-definido
+  const periodLabel = getDropdownPeriodLabelFromRange(filters.dateRange)
+  
+  // Criar objeto com todos os filtros para gerar hash
+  const filterKey: any = {
+    status: filters.status ? filters.status.sort().join(',') : null, // Ordenar para garantir consistência
+    removido: filters.removido !== undefined ? filters.removido : null,
+  }
+
+  // Se for período customizado, usar as datas exatas
+  if (!periodLabel) {
+    const start = new Date(filters.dateRange.start)
+    const end = new Date(filters.dateRange.end)
+    // Normalizar datas para garantir consistência (apenas data, sem hora)
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+    filterKey.periodo_customizado = {
+      start: start.toISOString().split('T')[0], // Apenas a data (YYYY-MM-DD)
+      end: end.toISOString().split('T')[0],
+    }
+  } else {
+    // Período pré-definido
+    filterKey.periodo = periodLabel
+  }
+
+  // Gerar hash da combinação de filtros
+  const filterString = JSON.stringify(filterKey)
+  const hash = hashString(filterString)
+
+  return `casual_crm_orcamentos_cache_${hash}`
+}
+
+/**
+ * Busca projetos da API aplicando o filtro de data via URL (sem filtro no front).
+ *
+ * Regra (Status de Projeto):
+ * - Apenas uma chamada para `/obj/projeto`
+ * - Filtro feito por `Created Date` usando `constraints` (greater than / less than)
+ * - Cache no localStorage para períodos pré-definidos e customizados
  */
 export async function fetchProjects(filters?: Partial<DashboardFilters>): Promise<Project[]> {
+  // Verificar se deve usar cache (declarar antes do try para estar disponível no catch)
+  const cacheKey = getCacheKeyForFilters(filters, 'projetos')
+  const timestampKey = cacheKey ? `${cacheKey}_timestamp` : null
+
   try {
-    const url = new URL(`${API_BASE_URL}/obj/projeto`)
-    
-    // Adicionar parâmetros de filtro se fornecidos
-    // Nota: A API pode ter parâmetros específicos, ajustar conforme documentação
+    // Tentar carregar do cache se não for período customizado
+    if (cacheKey && timestampKey && typeof window !== 'undefined') {
+      try {
+        const cachedData = localStorage.getItem(cacheKey)
+        const cachedTimestamp = localStorage.getItem(timestampKey)
+        
+        if (cachedData && cachedTimestamp) {
+          const projects = JSON.parse(cachedData) as Project[]
+          const timestamp = parseInt(cachedTimestamp, 10)
+          const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+          
+          // Cache válido por 30 minutos
+          if (ageInMinutes < 30) {
+            return projects
+          }
+        }
+      } catch (error) {
+        // Ignorar erros de leitura de cache
+      }
+    }
+
+    const allProjects: Project[] = []
+
+    // Definir período de data:
+    // - Se vier `filters.dateRange`, usamos ele
+    // - Caso contrário, período padrão = últimos 7 dias até agora
+    let start: Date
+    let end: Date
+
     if (filters?.dateRange) {
-      // Adicionar filtros de data se a API suportar
-      // url.searchParams.append('startDate', filters.dateRange.start.toString())
-      // url.searchParams.append('endDate', filters.dateRange.end.toString())
+      start = new Date(filters.dateRange.start)
+      end = new Date(filters.dateRange.end)
+    } else {
+      end = new Date()
+      start = new Date()
+      start.setDate(start.getDate() - 7)
     }
-    
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
+
+    // Garantir início/fim do dia
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+
+    const baseConstraints = [
+      {
+        key: 'Created Date',
+        constraint_type: 'greater than',
+        value: start.toISOString(),
       },
-    })
+      {
+        key: 'Created Date',
+        constraint_type: 'less than',
+        value: end.toISOString(),
+      },
+    ]
+
+    let cursor = 0
+    let hasMore = true
+    let pageNumber = 1
+
+    while (hasMore) {
+      const url = new URL(`${API_BASE_URL}/obj/projeto`)
+
+      // Paginação Bubble: cursor + limit
+      if (cursor > 0) {
+        url.searchParams.set('cursor', cursor.toString())
+      }
+      url.searchParams.set('limit', '100')
+
+      // Constraints de data (copiados a cada página)
+      url.searchParams.set('constraints', JSON.stringify(baseConstraints))
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar projetos: ${response.statusText}`)
+      }
+
+      const data: ProjectsResponse = await response.json()
+      const results = data.response.results || []
+      const remaining = data.response.remaining ?? 0
+
+      allProjects.push(...results)
+
+      hasMore = remaining > 0 && results.length > 0
+
+      if (hasMore) {
+        cursor = data.response.cursor + results.length
+        pageNumber++
+      }
+    }
+
+    // Log da quantidade de projetos retornados
+    console.log(`projeto api result total_projetos=${allProjects.length}`)
+
+    // Salvar no cache se não for período customizado e se a chave ainda não existir
+    if (cacheKey && timestampKey && typeof window !== 'undefined') {
+      try {
+        // Verificar se já existe cache para esta combinação
+        const existingCache = localStorage.getItem(cacheKey)
+        if (!existingCache) {
+          // Só salvar se não existir (não sobrescrever)
+          localStorage.setItem(cacheKey, JSON.stringify(allProjects))
+          localStorage.setItem(timestampKey, Date.now().toString())
+        }
+      } catch (error) {
+        // Ignorar erros ao salvar cache
+      }
+    }
+
+    return allProjects
+  } catch (error) {
+    console.error('❌ [API] Erro ao buscar projetos:', error)
     
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar projetos: ${response.statusText}`)
+    // Em caso de erro, tentar usar cache se disponível
+    if (cacheKey && typeof window !== 'undefined') {
+      try {
+        const cachedData = localStorage.getItem(cacheKey)
+        if (cachedData) {
+          return JSON.parse(cachedData) as Project[]
+        }
+      } catch {
+        // Ignorar erro ao ler cache
+      }
     }
     
-    const data: ProjectsResponse = await response.json()
-    return data.response.results
-  } catch (error) {
-    console.error('Erro ao buscar projetos:', error)
     throw error
   }
 }
@@ -229,55 +562,110 @@ export function orcamentoMatchesStatusFilter(orcamento: Orcamento, statusFilter:
   })
 }
 
-export function filterProjects(projects: Project[], filters: DashboardFilters): Project[] {
-  return projects.filter(project => {
-    // Filtro de data (Created Date)
-    if (filters.dateRange) {
-      const createdDate = new Date(project['Created Date'])
-      const startDate = new Date(filters.dateRange.start)
-      const endDate = new Date(filters.dateRange.end)
-      
-      // Ajustar para incluir o dia inteiro
-      startDate.setHours(0, 0, 0, 0)
-      endDate.setHours(23, 59, 59, 999)
-      
-      if (createdDate < startDate || createdDate > endDate) {
-        return false
-      }
-    }
+/**
+ * Verifica se um projeto tem pelo menos um orçamento com o status correspondente
+ * Status do dropdown: Em Aprovação, Enviado, Aprovado, Reprovado
+ */
+export function projectMatchesStatusFilter(
+  project: Project,
+  orcamentosMap: Map<string, Orcamento>,
+  statusFilter: OrcamentoStatusFilter
+): boolean {
+  if (!project.new_orcamentos || project.new_orcamentos.length === 0) {
+    // Projeto sem orçamentos: não corresponde a nenhum status
+    return false
+  }
+  
+  // Verificar cada orçamento do projeto
+  for (const orcamentoId of project.new_orcamentos) {
+    const orcamento = orcamentosMap.get(orcamentoId)
+    if (!orcamento) continue
     
-    // Filtro de núcleo
-    if (filters.nucleo && project.nucleo_lista) {
-      if (!project.nucleo_lista.includes(filters.nucleo)) {
-        return false
-      }
+    // Usar a função existente que verifica se o orçamento corresponde ao filtro
+    if (orcamentoMatchesStatusFilter(orcamento, statusFilter)) {
+      return true // Tem pelo menos um orçamento com o status correspondente
     }
-    
-    // Filtro de loja
-    if (filters.loja && project.loja !== filters.loja) {
-      return false
+  }
+  
+  return false
+}
+
+/**
+ * Filtra projetos baseado no status dos orçamentos
+ * Busca os orçamentos dos projetos e aplica o filtro
+ */
+export async function filterProjectsByOrcamentoStatus(
+  projects: Project[],
+  statusFilter: OrcamentoStatusFilter
+): Promise<Project[]> {
+  if (!statusFilter) {
+    return projects
+  }
+
+  // Coletar todos os IDs de orçamentos
+  const orcamentoIdsSet = new Set<string>()
+  projects.forEach(project => {
+    if (project.new_orcamentos) {
+      project.new_orcamentos.forEach(id => orcamentoIdsSet.add(id))
     }
-    
-    // Filtro de vendedor
-    if (filters.vendedor) {
-      const vendedorIds = extractVendedorIds(project)
-      if (!vendedorIds.includes(filters.vendedor)) {
-        return false
-      }
-    }
-    
-    // Filtro de arquiteto
-    if (filters.arquiteto && project.arquiteto !== filters.arquiteto) {
-      return false
-    }
-    
-    // Filtro de status do projeto
-    if (filters.status && project.status !== filters.status) {
-      return false
-    }
-    
-    return true
   })
+
+  if (orcamentoIdsSet.size === 0) {
+    // Se não há orçamentos, não há como filtrar por status de orçamento
+    return []
+  }
+
+  // Buscar orçamentos em lotes
+  const orcamentosMap = new Map<string, Orcamento>()
+  const orcamentoIdsArray = Array.from(orcamentoIdsSet)
+  const batchSize = 50
+
+  for (let i = 0; i < orcamentoIdsArray.length; i += batchSize) {
+    const batch = orcamentoIdsArray.slice(i, i + batchSize)
+    
+    const constraints = [
+      {
+        key: '_id',
+        constraint_type: 'in',
+        value: batch,
+      },
+    ]
+
+    const url = new URL(`${API_BASE_URL}/obj/orcamento`)
+    url.searchParams.set('constraints', JSON.stringify(constraints))
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (response.ok) {
+      const data: OrcamentosResponse = await response.json()
+      const results = data.response?.results || []
+      
+      results.forEach(orcamento => {
+        if (orcamento.removido !== true) {
+          orcamentosMap.set(orcamento._id, orcamento)
+        }
+      })
+    }
+  }
+
+  // Filtrar projetos baseado no status dos orçamentos
+  return projects.filter(project => 
+    projectMatchesStatusFilter(project, orcamentosMap, statusFilter)
+  )
+}
+
+/**
+ * Mantido apenas por compatibilidade.
+ * A regra agora é: todos os filtros são aplicados na API (constraints),
+ * exceto o filtro de status dos orçamentos que é feito no frontend.
+ */
+export function filterProjects(projects: Project[], _filters: DashboardFilters): Project[] {
+  return projects
 }
 
 /**
@@ -326,213 +714,190 @@ function extractVendedorIds(project: Project): string[] {
   return ids
 }
 
-/**
- * Busca orçamentos da API usando IDs
- * Tenta diferentes endpoints possíveis baseado no padrão da API
- */
+// As APIs diretas de orçamentos foram desabilitadas. Mantemos as funções exportadas
+// apenas para compatibilidade, retornando resultados vazios.
 export async function fetchOrcamentos(orcamentoIds: string[]): Promise<Orcamento[]> {
-  if (orcamentoIds.length === 0) {
-    return []
-  }
-
-  // Possíveis endpoints para orçamentos
-  const possibleEndpoints = [
-    'orcamento',
-    'orcamentos',
-    'All orcamentos',
-    'all_orcamentos',
-  ]
-
-  // Tentar buscar individualmente primeiro (mais confiável)
-  const orcamentos: Orcamento[] = []
-  const BATCH_SIZE = 20 // Limitar para não sobrecarregar
-  
-  for (let i = 0; i < Math.min(orcamentoIds.length, BATCH_SIZE); i++) {
-    const id = orcamentoIds[i]
-    
-    // Tentar cada endpoint possível
-    for (const endpoint of possibleEndpoints) {
-      try {
-        const url = new URL(`${API_BASE_URL}/obj/${endpoint}/${id}`)
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          // A API pode retornar de diferentes formas
-          if (data.response?.results?.[0]) {
-            orcamentos.push(data.response.results[0])
-            break // Se encontrou, não tentar outros endpoints
-          } else if (data.response?.result) {
-            orcamentos.push(data.response.result)
-            break
-          } else if (data._id === id) {
-            // Pode retornar diretamente o objeto
-            orcamentos.push(data)
-            break
-          }
-        }
-      } catch (err) {
-        // Continuar tentando outros endpoints
-        continue
-      }
-    }
-  }
-  
-  return orcamentos
+  void orcamentoIds
+  return []
 }
 
 /**
  * Busca todos os orçamentos relacionados aos projetos fornecidos
  */
 export async function fetchOrcamentosFromProjects(projects: Project[]): Promise<Map<string, Orcamento>> {
-  // Coletar todos os IDs de orçamentos únicos
-  const orcamentoIdsSet = new Set<string>()
-  projects.forEach(project => {
-    if (project.new_orcamentos) {
-      project.new_orcamentos.forEach(id => orcamentoIdsSet.add(id))
-    }
-  })
-  
-  const orcamentoIds = Array.from(orcamentoIdsSet)
-  
-  if (orcamentoIds.length === 0) {
-    return new Map()
-  }
-  
-  // Tentar buscar todos os orçamentos de uma vez primeiro (mais eficiente)
-  const possibleEndpoints = ['orcamento', 'orcamentos', 'All orcamentos', 'all_orcamentos']
-  let allOrcamentos: Orcamento[] = []
-  
-  // Tentar buscar listagem completa primeiro
-  for (const endpoint of possibleEndpoints) {
-    try {
-      const url = new URL(`${API_BASE_URL}/obj/${endpoint}`)
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      if (response.ok) {
-        const data: OrcamentosResponse = await response.json()
-        const results = data.response?.results || []
-        // Filtrar apenas os orçamentos que precisamos
-        const filtered = results.filter((orc: Orcamento) => orcamentoIds.includes(orc._id))
-        if (filtered.length > 0) {
-          allOrcamentos = filtered
-          break
-        }
-      }
-    } catch (err) {
-      // Continuar tentando outros endpoints
-      continue
-    }
-  }
-  
-  // Se não encontrou na listagem, buscar individualmente
-  if (allOrcamentos.length === 0) {
-    allOrcamentos = await fetchOrcamentos(orcamentoIds)
-  }
-  
-  // Criar mapa de ID -> Orcamento
-  const orcamentosMap = new Map<string, Orcamento>()
-  allOrcamentos.forEach(orcamento => {
-    orcamentosMap.set(orcamento._id, orcamento)
-  })
-  
-  return orcamentosMap
+  void projects
+  return new Map()
 }
 
 /**
  * Busca todos os orçamentos da API com filtros opcionais
  */
+function getDropdownPeriodLabelFromRange(range?: { start: Date | string; end: Date | string }): string | null {
+  if (!range) return 'Últimos 7 dias'
+
+  const start = new Date(range.start)
+  const end = new Date(range.end)
+  const now = new Date()
+
+  const normalizeDate = (date: Date) => {
+    const d = new Date(date)
+    d.setHours(0, 0, 0, 0)
+    return d.getTime()
+  }
+
+  const startTime = normalizeDate(start)
+  const endTime = normalizeDate(end)
+  const nowTime = normalizeDate(now)
+
+  // Últimos 7 dias
+  const last7Days = new Date()
+  last7Days.setDate(last7Days.getDate() - 7)
+  const last7DaysTime = normalizeDate(last7Days)
+  if (startTime === last7DaysTime && endTime >= nowTime - 86400000) {
+    return 'Últimos 7 dias'
+  }
+
+  // Este Mês
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const thisMonthStartTime = normalizeDate(thisMonthStart)
+  if (startTime === thisMonthStartTime && endTime >= nowTime - 86400000) {
+    return 'Este Mês'
+  }
+
+  // Este Trimestre
+  const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
+  const thisQuarterStart = new Date(now.getFullYear(), quarterStartMonth, 1)
+  const thisQuarterStartTime = normalizeDate(thisQuarterStart)
+  if (startTime === thisQuarterStartTime && endTime >= nowTime - 86400000) {
+    return 'Este Trimestre'
+  }
+
+  // Este Ano
+  const thisYearStart = new Date(now.getFullYear(), 0, 1)
+  const thisYearStartTime = normalizeDate(thisYearStart)
+  if (startTime === thisYearStartTime && endTime >= nowTime - 86400000) {
+    return 'Este Ano'
+  }
+
+  // Se não casar com nenhum preset do dropdown, não rotulamos
+  return null
+}
+
 export async function fetchAllOrcamentos(filters?: {
   dateRange?: { start: Date | string; end: Date | string }
   status?: string[]
   removido?: boolean
 }): Promise<Orcamento[]> {
-  try {
-    const url = new URL(`${API_BASE_URL}/obj/orcamento`)
-    
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar orçamentos: ${response.statusText}`)
-    }
-    
-    const data: OrcamentosResponse = await response.json()
-    let orcamentos = data.response.results || []
-    
-    // Filtrar por removido
-    if (filters?.removido !== undefined) {
-      orcamentos = orcamentos.filter(orc => {
-        const removido = orc.removido === true
-        return filters.removido ? removido : !removido
-      })
-    } else {
-      // Por padrão, excluir removidos
-      orcamentos = orcamentos.filter(orc => orc.removido !== true)
-    }
-    
-    // Filtrar por status
-    if (filters?.status && filters.status.length > 0) {
-      orcamentos = orcamentos.filter(orc => {
-        const status = String(orc.status || '').toLowerCase()
-        return filters.status!.some(s => status.includes(s.toLowerCase()))
-      })
-    }
-    
-    // Filtrar por data
-    if (filters?.dateRange) {
-      const startDate = new Date(filters.dateRange.start)
-      const endDate = new Date(filters.dateRange.end)
-      endDate.setHours(23, 59, 59, 999)
-      
-      orcamentos = orcamentos.filter(orc => {
-        const dataOrcamento = orc.data_orcamento ? new Date(orc.data_orcamento) : null
-        if (!dataOrcamento) return false
-        
-        return dataOrcamento >= startDate && dataOrcamento <= endDate
-      })
-    }
-    
-    return orcamentos
-  } catch (error) {
-    console.error('Erro ao buscar orçamentos:', error)
-    throw error
-  }
-}
+  // Verificar se deve usar cache (declarar antes do try para estar disponível no catch)
+  const cacheKey = getCacheKeyForOrcamentosFilters(filters)
+  const timestampKey = cacheKey ? `${cacheKey}_timestamp` : null
+  const periodLabel = filters?.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) : null
 
-/**
- * Busca todos os itens de orçamento da API com paginação
- * Endpoint: /obj/item_orcamento
- */
-export async function fetchAllItemOrcamentos(): Promise<ItemOrcamento[]> {
   try {
-    const allItems: ItemOrcamento[] = []
+    if (API_DISABLED) {
+      logApiDisabled('/obj/orcamento')
+      return []
+    }
+
+    // Tentar carregar do cache se não for período customizado
+    if (cacheKey && timestampKey && typeof window !== 'undefined') {
+      try {
+        const cachedData = localStorage.getItem(cacheKey)
+        const cachedTimestamp = localStorage.getItem(timestampKey)
+
+        if (cachedData && cachedTimestamp) {
+          const orcamentos = JSON.parse(cachedData) as Orcamento[]
+          const timestamp = parseInt(cachedTimestamp, 10)
+          const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+
+          // Cache válido por 30 minutos
+          if (ageInMinutes < 30) {
+            // Aplicar filtros locais (removido, status) mesmo com cache
+            let filteredOrcamentos = orcamentos
+
+            if (filters?.removido !== undefined) {
+              filteredOrcamentos = filteredOrcamentos.filter(orc => {
+                const removido = orc.removido === true
+                return filters.removido ? removido : !removido
+              })
+            } else {
+              filteredOrcamentos = filteredOrcamentos.filter(orc => orc.removido !== true)
+            }
+
+            if (filters?.status && filters.status.length > 0) {
+              filteredOrcamentos = filteredOrcamentos.filter(orc => {
+                const status = String(orc.status || '').toLowerCase()
+                return filters.status!.some((s: string) => status.includes(s.toLowerCase()))
+              })
+            }
+
+            return filteredOrcamentos
+          }
+        }
+      } catch (error) {
+        // Ignorar erros de leitura de cache
+      }
+    }
+
+    const allOrcamentos: Orcamento[] = []
     let cursor = 0
     let hasMore = true
     let pageNumber = 1
 
-    console.log('🔵 [API] Iniciando busca de item_orcamento com paginação...')
-
     while (hasMore) {
-      const url = new URL(`${API_BASE_URL}/obj/item_orcamento`)
+      const url = new URL(`${API_BASE_URL}/obj/orcamento`)
+
+      // Paginação
       if (cursor > 0) {
         url.searchParams.set('cursor', cursor.toString())
       }
       url.searchParams.set('limit', '100')
+
+      // Quando vier dateRange (caso da Margem & Rentabilidade),
+      // aplicamos o filtro direto na API usando Created Date.
+      if (filters?.dateRange) {
+        const start = new Date(filters.dateRange.start)
+        const end = new Date(filters.dateRange.end)
+
+        // início do dia
+        start.setHours(0, 0, 0, 0)
+
+        // limite superior exclusivo = dia seguinte às 00:00
+        const endExclusive = new Date(end)
+        endExclusive.setDate(endExclusive.getDate() + 1)
+        endExclusive.setHours(0, 0, 0, 0)
+
+        const constraints = [
+          {
+            key: 'Created Date',
+            constraint_type: 'greater than',
+            value: start.toISOString(),
+          },
+          {
+            key: 'Created Date',
+            constraint_type: 'less than',
+            value: endExclusive.toISOString(),
+          },
+        ]
+
+        url.searchParams.set('constraints', JSON.stringify(constraints))
+
+        // Logs simples para inspeção:
+        // 1) período aplicado
+        if (periodLabel) {
+          console.log(
+            `orcamento dateRange periodo="${periodLabel}" start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
+          )
+        } else {
+          console.log(
+            `orcamento dateRange start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
+          )
+        }
+        // 2) curl da chamada (apenas na primeira página)
+        if (pageNumber === 1) {
+          console.log(`curl -X GET '${url.toString()}' -H 'Content-Type: application/json'`)
+        }
+      }
 
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -542,18 +907,22 @@ export async function fetchAllItemOrcamentos(): Promise<ItemOrcamento[]> {
       })
 
       if (!response.ok) {
-        throw new Error(`Erro ao buscar item_orcamento: ${response.statusText}`)
+        throw new Error(`Erro ao buscar orçamentos: ${response.statusText}`)
       }
 
-      const data: ItemOrcamentosResponse = await response.json()
+      const data: OrcamentosResponse = await response.json()
+
+      // Log simples do resumo retornado pela API (count / remaining) - apenas na primeira página
+      if (pageNumber === 1 && data && data.response) {
+        console.log(
+          `orcamento api result { "count": ${data.response.count ?? 0}, "remaining": ${data.response.remaining ?? 0} }`,
+        )
+      }
+
       const results = data.response.results || []
-      const remaining = data.response.remaining || 0
+      const remaining = data.response.remaining ?? 0
 
-      allItems.push(...results)
-
-      console.log(
-        `🔵 [API] Página ${pageNumber}: ${results.length} itens encontrados | Restantes: ${remaining} | Total acumulado: ${allItems.length}`,
-      )
+      allOrcamentos.push(...results)
 
       hasMore = remaining > 0 && results.length > 0
 
@@ -563,13 +932,143 @@ export async function fetchAllItemOrcamentos(): Promise<ItemOrcamento[]> {
       }
     }
 
-    console.log(`✅ [API] Busca concluída: ${allItems.length} itens de orçamento no total (${pageNumber} páginas)`)
+    // Filtrar por removido (se pedido)
+    let orcamentos = allOrcamentos
+    if (filters?.removido !== undefined) {
+      orcamentos = orcamentos.filter(orc => {
+        const removido = orc.removido === true
+        return filters.removido ? removido : !removido
+      })
+    } else {
+      // Por padrão, excluir removidos
+      orcamentos = orcamentos.filter(orc => orc.removido !== true)
+    }
+
+    // Filtrar por status (se pedido)
+    if (filters?.status && filters.status.length > 0) {
+      orcamentos = orcamentos.filter(orc => {
+        const status = String(orc.status || '').toLowerCase()
+        return filters.status!.some(s => status.includes(s.toLowerCase()))
+      })
+    }
+
+    // Salvar no cache se não for período customizado e se a chave ainda não existir
+    // Salvar os dados completos (antes dos filtros de removido/status) para reutilização
+    if (cacheKey && timestampKey && typeof window !== 'undefined') {
+      try {
+        // Verificar se já existe cache para esta combinação
+        const existingCache = localStorage.getItem(cacheKey)
+        if (!existingCache) {
+          // Só salvar se não existir (não sobrescrever)
+          // Salvar todos os orçamentos (sem filtros de removido/status) para reutilização
+          const orcamentosToCache = allOrcamentos.filter(orc => orc.removido !== true)
+          localStorage.setItem(cacheKey, JSON.stringify(orcamentosToCache))
+          localStorage.setItem(timestampKey, Date.now().toString())
+        }
+      } catch (error) {
+        // Ignorar erros ao salvar cache
+      }
+    }
+
+    return orcamentos
+  } catch (error) {
+    console.error('Erro ao buscar orçamentos:', error)
+
+    // Em caso de erro, tentar usar cache se disponível
+    if (cacheKey && typeof window !== 'undefined') {
+      try {
+        const cachedData = localStorage.getItem(cacheKey)
+        if (cachedData) {
+          const cachedOrcamentos = JSON.parse(cachedData) as Orcamento[]
+
+          // Aplicar filtros locais
+          let filtered = cachedOrcamentos
+          if (filters?.removido !== undefined) {
+            filtered = filtered.filter(orc => {
+              const removido = orc.removido === true
+              return filters.removido ? removido : !removido
+            })
+          }
+          if (filters?.status && filters.status.length > 0) {
+            filtered = filtered.filter(orc => {
+              const status = String(orc.status || '').toLowerCase()
+              return filters.status!.some(s => status.includes(s.toLowerCase()))
+            })
+          }
+
+          return filtered
+        }
+      } catch {
+        // Ignorar erro ao ler cache
+      }
+    }
+
+    throw error
+  }
+}
+
+/**
+ * Busca itens de orçamento por lista de IDs usando constraints
+ * Endpoint: /obj/item_orcamento
+ * @param itemIds - Array de IDs dos itens de orçamento a buscar
+ */
+export async function fetchItemOrcamentosByIds(itemIds: string[]): Promise<ItemOrcamento[]> {
+  if (API_DISABLED || itemIds.length === 0) {
+    return []
+  }
+
+  try {
+    const allItems: ItemOrcamento[] = []
+    
+    // Buscar em lotes de 50 IDs usando "in" constraint (muito mais rápido)
+    const batchSize = 50
+    
+    for (let i = 0; i < itemIds.length; i += batchSize) {
+      const batch = itemIds.slice(i, i + batchSize)
+      
+      const constraints = [
+        {
+          key: '_id',
+          constraint_type: 'in',
+          value: batch,
+        },
+      ]
+
+      const url = new URL(`${API_BASE_URL}/obj/item_orcamento`)
+      url.searchParams.set('constraints', JSON.stringify(constraints))
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        console.error(`Erro ao buscar itens de orçamento (lote ${Math.floor(i / batchSize) + 1}):`, response.statusText)
+        continue
+      }
+
+      const data = await response.json()
+      const results = data.response?.results || []
+      allItems.push(...results)
+    }
 
     return allItems
   } catch (error) {
-    console.error('❌ [API] Erro ao buscar itens de orçamento (item_orcamento):', error)
-    throw error
+    console.error('Erro ao buscar itens de orçamento:', error)
+    return []
   }
+}
+
+/**
+ * Busca todos os itens de orçamento da API com paginação
+ * Endpoint: /obj/item_orcamento
+ * @deprecated Use fetchItemOrcamentosByIds instead
+ */
+export async function fetchAllItemOrcamentos(): Promise<ItemOrcamento[]> {
+  // API de itens de orçamento desabilitada; retornar lista vazia
+  return []
 }
 
 /**
@@ -590,23 +1089,27 @@ export async function fetchVendedores(forceRefresh: boolean = false): Promise<Ve
       if (cachedData && cachedTimestamp) {
         const vendedores = JSON.parse(cachedData) as Vendedor[]
         const timestamp = parseInt(cachedTimestamp, 10)
-        const ageInHours = (Date.now() - timestamp) / (1000 * 60 * 60)
+        const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
         
-        console.log(`💾 [API] Usando cache de vendedores (${vendedores.length} vendedores, ${ageInHours.toFixed(1)}h atrás)`)
-        return vendedores
+        // Cache válido por 30 minutos
+        if (ageInMinutes < 30) {
+          return vendedores
+        }
       }
     } catch (error) {
-      console.warn('⚠️ [API] Erro ao ler cache, buscando da API:', error)
+      // Ignorar erros de leitura de cache
     }
   }
   
   try {
+    if (API_DISABLED) {
+      logApiDisabled('/obj/vendedor')
+      return []
+    }
     const allVendedores: Vendedor[] = []
     let cursor = 0
     let hasMore = true
     let pageNumber = 1
-    
-    console.log('🔵 [API] Iniciando busca de vendedores com paginação...')
     
     while (hasMore) {
       const url = new URL(`${API_BASE_URL}/obj/vendedor`)
@@ -632,8 +1135,6 @@ export async function fetchVendedores(forceRefresh: boolean = false): Promise<Ve
       
       allVendedores.push(...results)
       
-      console.log(`🔵 [API] Página ${pageNumber}: ${results.length} vendedores encontrados | Restantes: ${remaining} | Total acumulado: ${allVendedores.length}`)
-      
       // Verificar se há mais resultados para buscar
       hasMore = remaining > 0 && results.length > 0
       
@@ -643,16 +1144,18 @@ export async function fetchVendedores(forceRefresh: boolean = false): Promise<Ve
       }
     }
     
-    console.log(`✅ [API] Busca concluída: ${allVendedores.length} vendedores no total (${pageNumber} páginas)`)
-    
-    // Salvar no localStorage
+    // Salvar no localStorage apenas se não existir cache
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(allVendedores))
-        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
-        console.log(`💾 [API] Cache de vendedores salvo no localStorage`)
+        // Verificar se já existe cache
+        const existingCache = localStorage.getItem(STORAGE_KEY)
+        if (!existingCache) {
+          // Só salvar se não existir (não sobrescrever)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(allVendedores))
+          localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
+        }
       } catch (error) {
-        console.warn('⚠️ [API] Erro ao salvar cache:', error)
+        // Ignorar erros ao salvar cache
       }
     }
     
@@ -665,11 +1168,10 @@ export async function fetchVendedores(forceRefresh: boolean = false): Promise<Ve
       try {
         const cachedData = localStorage.getItem(STORAGE_KEY)
         if (cachedData) {
-          console.log('⚠️ [API] Erro na API, usando cache como fallback')
           return JSON.parse(cachedData) as Vendedor[]
         }
-      } catch (cacheError) {
-        console.error('❌ [API] Erro ao ler cache de fallback:', cacheError)
+      } catch {
+        // Ignorar erro ao ler cache
       }
     }
     
@@ -695,23 +1197,27 @@ export async function fetchArquitetos(forceRefresh: boolean = false): Promise<Ar
       if (cachedData && cachedTimestamp) {
         const arquitetos = JSON.parse(cachedData) as Arquiteto[]
         const timestamp = parseInt(cachedTimestamp, 10)
-        const ageInHours = (Date.now() - timestamp) / (1000 * 60 * 60)
+        const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
         
-        console.log(`💾 [API] Usando cache de arquitetos (${arquitetos.length} arquitetos, ${ageInHours.toFixed(1)}h atrás)`)
-        return arquitetos
+        // Cache válido por 30 minutos
+        if (ageInMinutes < 30) {
+          return arquitetos
+        }
       }
     } catch (error) {
-      console.warn('⚠️ [API] Erro ao ler cache, buscando da API:', error)
+      // Ignorar erros de leitura de cache
     }
   }
   
   try {
+    if (API_DISABLED) {
+      logApiDisabled('/obj/arquiteto')
+      return []
+    }
     const allArquitetos: Arquiteto[] = []
     let cursor = 0
     let hasMore = true
     let pageNumber = 1
-    
-    console.log('🔵 [API] Iniciando busca de arquitetos com paginação...')
     
     while (hasMore) {
       const url = new URL(`${API_BASE_URL}/obj/arquiteto`)
@@ -737,8 +1243,6 @@ export async function fetchArquitetos(forceRefresh: boolean = false): Promise<Ar
       
       allArquitetos.push(...results)
       
-      console.log(`🔵 [API] Página ${pageNumber}: ${results.length} arquitetos encontrados | Restantes: ${remaining} | Total acumulado: ${allArquitetos.length}`)
-      
       // Verificar se há mais resultados para buscar
       hasMore = remaining > 0 && results.length > 0
       
@@ -748,16 +1252,18 @@ export async function fetchArquitetos(forceRefresh: boolean = false): Promise<Ar
       }
     }
     
-    console.log(`✅ [API] Busca concluída: ${allArquitetos.length} arquitetos no total (${pageNumber} páginas)`)
-    
-    // Salvar no localStorage
+    // Salvar no localStorage apenas se não existir cache
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(allArquitetos))
-        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
-        console.log(`💾 [API] Cache de arquitetos salvo no localStorage`)
+        // Verificar se já existe cache
+        const existingCache = localStorage.getItem(STORAGE_KEY)
+        if (!existingCache) {
+          // Só salvar se não existir (não sobrescrever)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(allArquitetos))
+          localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
+        }
       } catch (error) {
-        console.warn('⚠️ [API] Erro ao salvar cache:', error)
+        // Ignorar erros ao salvar cache
       }
     }
     
@@ -770,11 +1276,10 @@ export async function fetchArquitetos(forceRefresh: boolean = false): Promise<Ar
       try {
         const cachedData = localStorage.getItem(STORAGE_KEY)
         if (cachedData) {
-          console.log('⚠️ [API] Erro na API, usando cache como fallback')
           return JSON.parse(cachedData) as Arquiteto[]
         }
-      } catch (cacheError) {
-        console.error('❌ [API] Erro ao ler cache de fallback:', cacheError)
+      } catch {
+        // Ignorar erro ao ler cache
       }
     }
     
@@ -800,23 +1305,27 @@ export async function fetchClientes(forceRefresh: boolean = false): Promise<Clie
       if (cachedData && cachedTimestamp) {
         const clientes = JSON.parse(cachedData) as Cliente[]
         const timestamp = parseInt(cachedTimestamp, 10)
-        const ageInHours = (Date.now() - timestamp) / (1000 * 60 * 60)
+        const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
         
-        console.log(`💾 [API] Usando cache de clientes (${clientes.length} clientes, ${ageInHours.toFixed(1)}h atrás)`)
-        return clientes
+        // Cache válido por 30 minutos
+        if (ageInMinutes < 30) {
+          return clientes
+        }
       }
     } catch (error) {
-      console.warn('⚠️ [API] Erro ao ler cache, buscando da API:', error)
+      // Ignorar erros de leitura de cache
     }
   }
   
   try {
+    if (API_DISABLED) {
+      logApiDisabled('/obj/cliente')
+      return []
+    }
     const allClientes: Cliente[] = []
     let cursor = 0
     let hasMore = true
     let pageNumber = 1
-    
-    console.log('🔵 [API] Iniciando busca de clientes com paginação...')
     
     while (hasMore) {
       const url = new URL(`${API_BASE_URL}/obj/cliente`)
@@ -843,8 +1352,6 @@ export async function fetchClientes(forceRefresh: boolean = false): Promise<Clie
       
       allClientes.push(...results)
       
-      console.log(`🔵 [API] Página ${pageNumber}: ${results.length} clientes encontrados | Restantes: ${remaining} | Total acumulado: ${allClientes.length}`)
-      
       // Verificar se há mais resultados para buscar
       hasMore = remaining > 0 && results.length > 0
       
@@ -856,16 +1363,13 @@ export async function fetchClientes(forceRefresh: boolean = false): Promise<Clie
       }
     }
     
-    console.log(`✅ [API] Busca concluída: ${allClientes.length} clientes no total (${pageNumber} páginas)`)
-    
     // Salvar no localStorage
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(allClientes))
         localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
-        console.log(`💾 [API] Cache salvo no localStorage`)
       } catch (error) {
-        console.warn('⚠️ [API] Erro ao salvar cache:', error)
+        // Ignorar erros ao salvar cache
       }
     }
     
@@ -878,11 +1382,10 @@ export async function fetchClientes(forceRefresh: boolean = false): Promise<Clie
       try {
         const cachedData = localStorage.getItem(STORAGE_KEY)
         if (cachedData) {
-          console.log('⚠️ [API] Erro na API, usando cache como fallback')
           return JSON.parse(cachedData) as Cliente[]
         }
-      } catch (cacheError) {
-        console.error('❌ [API] Erro ao ler cache de fallback:', cacheError)
+      } catch {
+        // Ignorar erro ao ler cache
       }
     }
     
@@ -906,23 +1409,27 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
       if (cachedData && cachedTimestamp) {
         const lojas = JSON.parse(cachedData) as Loja[]
         const timestamp = parseInt(cachedTimestamp, 10)
-        const ageInHours = (Date.now() - timestamp) / (1000 * 60 * 60)
+        const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
         
-        console.log(`💾 [API] Usando cache de lojas (${lojas.length} lojas, ${ageInHours.toFixed(1)}h atrás)`)
-        return lojas
+        // Cache válido por 30 minutos
+        if (ageInMinutes < 30) {
+          return lojas
+        }
       }
     } catch (error) {
-      console.warn('⚠️ [API] Erro ao ler cache, buscando da API:', error)
+      // Ignorar erros de leitura de cache
     }
   }
   
   try {
+    if (API_DISABLED) {
+      logApiDisabled('/obj/loja')
+      return []
+    }
     const allLojas: Loja[] = []
     let cursor = 0
     let hasMore = true
     let pageNumber = 1
-    
-    console.log('🔵 [API] Iniciando busca de lojas com paginação...')
     
     while (hasMore) {
       const url = new URL(`${API_BASE_URL}/obj/loja`)
@@ -948,8 +1455,6 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
       
       allLojas.push(...results)
       
-      console.log(`🔵 [API] Página ${pageNumber}: ${results.length} lojas encontradas | Restantes: ${remaining} | Total acumulado: ${allLojas.length}`)
-      
       // Verificar se há mais resultados para buscar
       hasMore = remaining > 0 && results.length > 0
       
@@ -959,16 +1464,18 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
       }
     }
     
-    console.log(`✅ [API] Busca concluída: ${allLojas.length} lojas no total (${pageNumber} páginas)`)
-    
-    // Salvar no localStorage
+    // Salvar no localStorage apenas se não existir cache
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(allLojas))
-        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
-        console.log(`💾 [API] Cache salvo no localStorage`)
+        // Verificar se já existe cache
+        const existingCache = localStorage.getItem(STORAGE_KEY)
+        if (!existingCache) {
+          // Só salvar se não existir (não sobrescrever)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(allLojas))
+          localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
+        }
       } catch (error) {
-        console.warn('⚠️ [API] Erro ao salvar cache:', error)
+        // Ignorar erros ao salvar cache
       }
     }
     
@@ -981,11 +1488,10 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
       try {
         const cachedData = localStorage.getItem(STORAGE_KEY)
         if (cachedData) {
-          console.log('⚠️ [API] Erro na API, usando cache como fallback')
           return JSON.parse(cachedData) as Loja[]
         }
-      } catch (cacheError) {
-        console.error('❌ [API] Erro ao ler cache de fallback:', cacheError)
+      } catch {
+        // Ignorar erro ao ler cache
       }
     }
     
@@ -1009,8 +1515,8 @@ export function calculateOrcamentoMargin(
   orcamento: Orcamento,
   itensDoOrcamento: ItemOrcamento[] = []
 ): MarginMetrics {
-  // Faturamento Líquido = Valor_final_produtos (doc)
-  // Usamos fallbacks para evitar quebrar caso o campo tenha outro nome na API
+  // Faturamento Líquido = Valor_final_produtos
+  // Usamos fallbacks para evitar quebrar caso o campo tenha outro nome na API.
   const receita =
     Number(
       // Campo conforme documentação
@@ -1028,7 +1534,10 @@ export function calculateOrcamentoMargin(
       return sum + (Number(item.custo_total) || 0)
     }, 0) || 0
 
+  // Rentabilidade = Faturamento Líquido - Custo do Produto
   const lucro = receita - custoProdutos
+  
+  // Margem = Rentabilidade / Faturamento Líquido
   const margem = receita > 0 ? (lucro / receita) * 100 : 0
   
   return { lucro, receita, margem }
@@ -1162,7 +1671,9 @@ export function calculateMarginMetrics(
 export async function calculateFunnelMetrics(
   projects: Project[],
   funnelType: FunnelType,
-  comparePrevious?: boolean
+  comparePrevious?: boolean,
+  dateRange?: { start: Date | string; end: Date | string },
+  useOrcamentos: boolean = false // Novo parâmetro: se false, não busca orçamentos (Status de Projetos)
 ) {
   const createdCount = projects.length
   
@@ -1174,16 +1685,81 @@ export async function calculateFunnelMetrics(
     }
   })
   
-  // Buscar todos os orçamentos da API
-  const allOrcamentos = await fetchAllOrcamentos()
-  
-  // Filtrar apenas os orçamentos relacionados aos projetos
+  // Buscar orçamentos conforme a página
   const orcamentosMap = new Map<string, Orcamento>()
-  allOrcamentos.forEach(orcamento => {
-    if (orcamentoIdsSet.has(orcamento._id)) {
-      orcamentosMap.set(orcamento._id, orcamento)
+  
+  if (orcamentoIdsSet.size > 0) {
+    if (useOrcamentos) {
+      // Página Margem & Rentabilidade: buscar orçamentos com filtro de data
+      const allOrcamentos = await fetchAllOrcamentos(
+        dateRange
+          ? {
+              dateRange,
+              removido: false,
+            }
+          : undefined,
+      )
+      
+      // Filtrar apenas os orçamentos relacionados aos projetos
+      allOrcamentos.forEach(orcamento => {
+        if (orcamentoIdsSet.has(orcamento._id)) {
+          orcamentosMap.set(orcamento._id, orcamento)
+        }
+      })
+    } else {
+      // Página Status de Projetos: buscar apenas os orçamentos dos projetos (sem filtro de data)
+      // Buscar orçamentos por IDs usando constraint "in"
+      const orcamentoIdsArray = Array.from(orcamentoIdsSet)
+      const batchSize = 50
+      
+      // Log: quantos orçamentos serão buscados
+      console.log(`orcamento buscando total_orcamento_ids=${orcamentoIdsArray.length} total_lotes=${Math.ceil(orcamentoIdsArray.length / batchSize)}`)
+      
+      for (let i = 0; i < orcamentoIdsArray.length; i += batchSize) {
+        const batch = orcamentoIdsArray.slice(i, i + batchSize)
+        const loteNum = Math.floor(i / batchSize) + 1
+        const totalLotes = Math.ceil(orcamentoIdsArray.length / batchSize)
+        
+        // Log: início de cada lote
+        console.log(`orcamento lote ${loteNum}/${totalLotes} buscando ${batch.length} IDs`)
+        
+        const constraints = [
+          {
+            key: '_id',
+            constraint_type: 'in',
+            value: batch,
+          },
+        ]
+
+        const url = new URL(`${API_BASE_URL}/obj/orcamento`)
+        url.searchParams.set('constraints', JSON.stringify(constraints))
+
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (response.ok) {
+          const data: OrcamentosResponse = await response.json()
+          const results = data.response?.results || []
+          
+          // Log: resultado de cada lote
+          console.log(`orcamento lote ${loteNum}/${totalLotes} retornou ${results.length} orcamentos`)
+          
+          results.forEach(orcamento => {
+            if (orcamento.removido !== true) {
+              orcamentosMap.set(orcamento._id, orcamento)
+            }
+          })
+        }
+      }
+      
+      // Log: total de orçamentos encontrados
+      console.log(`orcamento total_encontrados=${orcamentosMap.size}`)
     }
-  })
+  }
   
   // Status que contam como "Enviado ao cliente"
   const sentStatuses = [
@@ -1199,10 +1775,15 @@ export async function calculateFunnelMetrics(
   let approvedCount = 0
   let rejectedCount = 0
   
-  projects.forEach(project => {
+  projects.forEach((project, projectIndex) => {
     if (!project.new_orcamentos || project.new_orcamentos.length === 0) {
+      // Log: projeto sem orçamentos
+      console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=0`)
       return
     }
+    
+    // Coletar informações dos orçamentos deste projeto para o log
+    const orcamentosInfo: Array<{ id: string; status: string }> = []
     
     // Verificar status dos orçamentos deste projeto
     let hasSent = false
@@ -1212,32 +1793,44 @@ export async function calculateFunnelMetrics(
     
     project.new_orcamentos.forEach(orcamentoId => {
       const orcamento = orcamentosMap.get(orcamentoId)
-      if (orcamento && orcamento.status) {
-        const status = String(orcamento.status).toLowerCase().trim()
+      if (orcamento) {
+        const status = orcamento.status ? String(orcamento.status) : 'sem status'
+        orcamentosInfo.push({ id: orcamentoId, status })
         
-        // Verificar se foi enviado (qualquer status que indique envio)
-        const isSent = sentStatuses.some(s => status.includes(s.toLowerCase())) ||
-                      status.includes('enviado') ||
-                      status.includes('aprovado') ||
-                      status.includes('reprovado') ||
-                      status.includes('liberado')
-        
-        if (isSent) {
-          hasSent = true
+        if (orcamento.status) {
+          const statusLower = status.toLowerCase().trim()
+          
+          // Verificar se foi enviado (qualquer status que indique envio)
+          const isSent = sentStatuses.some(s => statusLower.includes(s.toLowerCase())) ||
+                        statusLower.includes('enviado') ||
+                        statusLower.includes('aprovado') ||
+                        statusLower.includes('reprovado') ||
+                        statusLower.includes('liberado')
+          
+          if (isSent) {
+            hasSent = true
+          }
+          
+          // Verificar status específicos (mais específicos primeiro)
+          if (statusLower.includes('reprovado')) {
+            hasRejected = true
+          } else if (statusLower.includes('aprovado pelo cliente') || 
+                     statusLower.includes('aprovado') && !statusLower.includes('reprovado')) {
+            hasApproved = true
+          } else if (statusLower.includes('em aprovação') || 
+                     (statusLower.includes('aprovação') && !statusLower.includes('aprovado') && !statusLower.includes('reprovado'))) {
+            hasInApproval = true
+          }
         }
-        
-        // Verificar status específicos (mais específicos primeiro)
-        if (status.includes('reprovado')) {
-          hasRejected = true
-        } else if (status.includes('aprovado pelo cliente') || 
-                   status.includes('aprovado') && !status.includes('reprovado')) {
-          hasApproved = true
-        } else if (status.includes('em aprovação') || 
-                   (status.includes('aprovação') && !status.includes('aprovado') && !status.includes('reprovado'))) {
-          hasInApproval = true
-        }
+      } else {
+        // Orçamento não encontrado no mapa (pode ter sido removido ou não existe)
+        orcamentosInfo.push({ id: orcamentoId, status: 'não encontrado' })
       }
     })
+    
+    // Log: projeto com seus orçamentos (ID e status)
+    const orcamentosLog = orcamentosInfo.map(o => `{id=${o.id} status="${o.status}"}`).join(' ')
+    console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=${project.new_orcamentos.length} orcamentos=[${orcamentosLog}]`)
     
     // Contar por projeto (não por orçamento)
     if (hasSent) {
@@ -1270,6 +1863,9 @@ export async function calculateFunnelMetrics(
   const rejectedPercentage = sentCount > 0 
     ? ((rejectedCount / sentCount) * 100).toFixed(1) 
     : '0'
+  
+  // Log final: resumo de todos os dados processados
+  console.log(`funnel_metrics processado total_projetos=${createdCount} projetos_enviados=${sentCount} em_aprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount} total_orcamentos=${orcamentosMap.size}`)
   
   return {
     created: { 

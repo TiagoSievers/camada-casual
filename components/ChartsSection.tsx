@@ -112,15 +112,6 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
   const [orcamentosMap, setOrcamentosMap] = useState<Map<string, Orcamento>>(new Map())
   const [loading, setLoading] = useState(false)
 
-  // Log quando período muda
-  useEffect(() => {
-    console.log('🔵 [CHARTS] Período Daily mudou para:', periodDaily)
-  }, [periodDaily])
-
-  useEffect(() => {
-    console.log('🔵 [CHARTS] Período Status mudou para:', periodStatus)
-  }, [periodStatus])
-
   // Calcular período baseado no filtro - para o gráfico de evolução diária
   const dateRangeDaily = useMemo(() => {
     const end = new Date()
@@ -194,18 +185,6 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
       return isInRange
     })
     
-    console.log('🔵 [CHARTS] Filtragem por período (Daily):', {
-      period: periodDaily,
-      totalProjects: projects.length,
-      filteredProjects: filtered.length,
-      dateRange: {
-        start: dateRangeDaily.start.toISOString(),
-        end: dateRangeDaily.end.toISOString(),
-        startFormatted: dateRangeDaily.start.toLocaleDateString('pt-BR'),
-        endFormatted: dateRangeDaily.end.toLocaleDateString('pt-BR')
-      }
-    })
-    
     return filtered
   }, [projects, dateRangeDaily, periodDaily])
 
@@ -220,18 +199,6 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
       
       const isInRange = projectDate >= rangeStart && projectDate <= rangeEnd
       return isInRange
-    })
-    
-    console.log('🔵 [CHARTS] Filtragem por período (Status):', {
-      period: periodStatus,
-      totalProjects: projects.length,
-      filteredProjects: filtered.length,
-      dateRange: {
-        start: dateRangeStatus.start.toISOString(),
-        end: dateRangeStatus.end.toISOString(),
-        startFormatted: dateRangeStatus.start.toLocaleDateString('pt-BR'),
-        endFormatted: dateRangeStatus.end.toLocaleDateString('pt-BR')
-      }
     })
     
     return filtered
@@ -328,15 +295,6 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
   const statusEvolutionData = useMemo(() => {
     const dataByDate = new Map<string, { count: number; timestamp: number }>()
 
-    console.log('🔵 [CHARTS] Calculando evolução de status:', {
-      totalProjects: filteredProjectsStatus.length,
-      statusFilter,
-      dateRange: {
-        start: dateRangeStatus.start.toISOString(),
-        end: dateRangeStatus.end.toISOString()
-      }
-    })
-
     // Filtrar projetos pelo status selecionado
     let projectsByStatus = 0
     filteredProjectsStatus.forEach(project => {
@@ -359,10 +317,6 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
 
       dataByDate.get(dateKey)!.count++
     })
-
-    console.log('🔵 [CHARTS] Projetos filtrados por status:', projectsByStatus)
-    console.log('🔵 [CHARTS] Datas únicas encontradas:', Array.from(dataByDate.keys()))
-    console.log('🔵 [CHARTS] Contagem por data:', Array.from(dataByDate.entries()).map(([date, data]) => ({ date, count: data.count })))
 
     // Preencher dias sem projetos com valor 0 para manter continuidade visual
     // Mas apenas se houver dados

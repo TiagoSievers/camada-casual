@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { fetchProjects, filterProjects } from '@/lib/api'
+import { fetchProjects, filterProjectsByOrcamentoStatus } from '@/lib/api'
 import type { Project, DashboardFilters } from '@/types/dashboard'
 
 interface UseProjectsReturn {
@@ -25,13 +25,18 @@ export function useProjects(filters: DashboardFilters): UseProjectsReturn {
       setLoading(true)
       setError(null)
       
-      // Buscar todos os projetos da API
-      const allProjects = await fetchProjects()
+      // Buscar projetos da API já filtrados (tudo via URL / constraints, exceto status dos orçamentos)
+      const allProjects = await fetchProjects(filters)
       setProjects(allProjects)
       
-      // Aplicar filtros
-      const filtered = filterProjects(allProjects, filters)
-      setFilteredProjects(filtered)
+      // Aplicar filtro de status dos orçamentos se houver
+      if (filters.status) {
+        const filtered = await filterProjectsByOrcamentoStatus(allProjects, filters.status)
+        setFilteredProjects(filtered)
+      } else {
+        // Sem filtro de status, usar todos os projetos
+        setFilteredProjects(allProjects)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar projetos')
       console.error('Erro ao carregar projetos:', err)
@@ -42,13 +47,7 @@ export function useProjects(filters: DashboardFilters): UseProjectsReturn {
 
   useEffect(() => {
     loadProjects()
-  }, [])
-
-  // Reaplicar filtros quando mudarem
-  useEffect(() => {
-    const filtered = filterProjects(projects, filters)
-    setFilteredProjects(filtered)
-  }, [filters, projects])
+  }, [filters])
 
   return {
     projects,
