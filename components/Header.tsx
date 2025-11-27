@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import DatePicker, { registerLocale } from 'react-datepicker'
-import ptBR from 'date-fns/locale/pt-BR'
+import { ptBR } from 'date-fns/locale/pt-BR'
 import 'react-datepicker/dist/react-datepicker.css'
 import './Header.css'
 import type { DashboardFilters, FilterOptions, Nucleo, OrcamentoStatusFilter } from '@/types/dashboard'
@@ -342,7 +342,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
             <div className="header-title-wrapper">
               <h3 className="page-title">Dashboard Executivo - CRM</h3>
               <p className="page-subtitle">
-                {activeTab === 'status' && 'Margem & Rentabilidade - Análise de Margens'}
+                {activeTab === 'status' && 'Status de Projetos - Visão Geral do Pipeline'}
                 {activeTab === 'margin' && 'Margem & Rentabilidade - Análise de margens'}
                 {activeTab === 'performance' && 'Performance Comercial - Vendedores e arquitetos'}
                 {activeTab === 'rankings' && 'TOP 10 Rankings - Produtos e clientes'}
