@@ -48,7 +48,7 @@ export default function DashboardPage() {
   const { projects: allProjects, filteredProjects, loading: projectsLoading, error } = useProjects(filters)
 
   // Buscar opções de filtros usando os projetos já carregados
-  const { options: filterOptions, loading: optionsLoading } = useFilterOptions(allProjects)
+  const { options: filterOptions, loading: optionsLoading, loadLojas, loadVendedores, loadArquitetos } = useFilterOptions(allProjects)
 
   const renderContent = () => {
     if (error) {
@@ -113,6 +113,9 @@ export default function DashboardPage() {
           filterOptions={filterOptions}
           onFiltersChange={setFilters}
           activeTab={activeTab}
+          onLoadLojas={loadLojas}
+          onLoadVendedores={loadVendedores}
+          onLoadArquitetos={loadArquitetos}
         />
         <div className="dashboard-content">
           {renderContent()}

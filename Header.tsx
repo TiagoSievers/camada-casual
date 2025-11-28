@@ -2,13 +2,13 @@
 
 import { useState, useRef, useEffect } from 'react'
 import DatePicker, { registerLocale } from 'react-datepicker'
-import { ptBR } from 'date-fns/locale/pt-BR'
+import ptBR from 'date-fns/locale/pt-BR'
 import 'react-datepicker/dist/react-datepicker.css'
 import './Header.css'
 import type { DashboardFilters, FilterOptions, Nucleo, OrcamentoStatusFilter } from '@/types/dashboard'
 import type { TabType } from '@/components/Sidebar'
 
-// Registrar localiza├º├úo em portugu├¬s
+// Registrar localização em português
 registerLocale('pt-BR', ptBR)
 
 interface HeaderProps {
@@ -27,7 +27,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
   const [isCustomDateRange, setIsCustomDateRange] = useState(false)
   const datePickerRef = useRef<HTMLDivElement>(null)
 
-  // Fun├º├úo auxiliar para verificar se as datas correspondem a um preset (sem depender de isCustomDateRange)
+  // Função auxiliar para verificar se as datas correspondem a um preset (sem depender de isCustomDateRange)
   const matchesPreset = (): boolean => {
     if (!filters.dateRange) return false
     
@@ -73,8 +73,8 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
     setStartDate(new Date(filters.dateRange.start))
     setEndDate(new Date(filters.dateRange.end))
     
-    // Resetar estado custom se os filtros mudarem para um preset padr├úo
-    // (isso acontece quando troca de aba ou quando o dropdown ├® usado)
+    // Resetar estado custom se os filtros mudarem para um preset padrão
+    // (isso acontece quando troca de aba ou quando o dropdown é usado)
     if (matchesPreset()) {
       setIsCustomDateRange(false)
     }
@@ -124,13 +124,13 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
   const handleDateChange = (dates: [Date | null, Date | null]) => {
     const [start, end] = dates
     
-    // Atualizar estados locais conforme o usu├írio seleciona
+    // Atualizar estados locais conforme o usuário seleciona
     if (start) {
       setStartDate(start)
     }
     
-    // Sempre atualizar endDate com o valor selecionado (pode ser null se ainda n├úo selecionou)
-    // Isso permite que o usu├írio selecione qualquer data final, n├úo apenas hoje
+    // Sempre atualizar endDate com o valor selecionado (pode ser null se ainda não selecionou)
+    // Isso permite que o usuário selecione qualquer data final, não apenas hoje
     setEndDate(end || null as any)
 
     // Aplicar automaticamente quando ambas as datas estiverem selecionadas
@@ -144,12 +144,12 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
       // Marcar como range customizado (ignora o dropdown)
       setIsCustomDateRange(true)
 
-      // Log das datas selecionadas no calend├írio (ser├úo usadas diretamente na API)
+      // Log das datas selecionadas no calendário (serão usadas diretamente na API)
       console.log(
         `calendario customizado start=${adjustedStart.toISOString()} end=${adjustedEnd.toISOString()}`,
       )
 
-      // Log da URL que ser├í usada na chamada da API de projeto
+      // Log da URL que será usada na chamada da API de projeto
       const constraints = [
         {
           key: 'Created Date',
@@ -170,12 +170,12 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
         dateRange: { start: adjustedStart, end: adjustedEnd },
       })
       
-      // Fechar ap├│s sele├º├úo
+      // Fechar após seleção
       setTimeout(() => setIsDatePickerOpen(false), 200)
     }
   }
 
-  // Calcular per├¡odos pr├®-definidos
+  // Calcular períodos pré-definidos
   const getDateRangeForPreset = (preset: DateRangePreset): { start: Date; end: Date } => {
     const end = new Date()
     end.setHours(23, 59, 59, 999)
@@ -191,7 +191,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
         start.setHours(0, 0, 0, 0)
         break
       case 'thisQuarter':
-        // ├Ültimos 3 meses a partir de hoje
+        // Últimos 3 meses a partir de hoje
         start.setMonth(start.getMonth() - 3)
         start.setHours(0, 0, 0, 0)
         break
@@ -208,11 +208,11 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
     return { start, end }
   }
 
-  // Detectar qual preset est├í ativo baseado nas datas
+  // Detectar qual preset está ativo baseado nas datas
   const getCurrentPreset = (): DateRangePreset => {
     if (!filters.dateRange) return 'last7days'
     
-    // Se o calend├írio customizado foi usado, retornar 'custom' para ignorar o dropdown
+    // Se o calendário customizado foi usado, retornar 'custom' para ignorar o dropdown
     if (isCustomDateRange) {
       return 'custom'
     }
@@ -221,7 +221,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
     const end = new Date(filters.dateRange.end)
     const now = new Date()
     
-    // Normalizar datas para compara├º├úo (apenas data, sem hora)
+    // Normalizar datas para comparação (apenas data, sem hora)
     const normalizeDate = (date: Date) => {
       const d = new Date(date)
       d.setHours(0, 0, 0, 0)
@@ -232,7 +232,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
     const endTime = normalizeDate(end)
     const nowTime = normalizeDate(now)
     
-    // Verificar se ├® "├Ültimos 7 dias"
+    // Verificar se é "Últimos 7 dias"
     const last7Days = new Date()
     last7Days.setDate(last7Days.getDate() - 7)
     const last7DaysTime = normalizeDate(last7Days)
@@ -240,37 +240,37 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
       return 'last7days'
     }
     
-    // Verificar se ├® "Este M├¬s"
+    // Verificar se é "Este Mês"
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const thisMonthStartTime = normalizeDate(thisMonthStart)
     if (startTime === thisMonthStartTime && endTime >= nowTime - 86400000) {
       return 'thisMonth'
     }
     
-    // Verificar se ├® "Este Trimestre" (├║ltimos 3 meses)
+    // Verificar se é "Este Trimestre" (últimos 3 meses)
     const threeMonthsAgo = new Date(now)
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
     const threeMonthsAgoTime = normalizeDate(threeMonthsAgo)
-    // Aceitar uma margem de ┬▒2 dias para compensar diferen├ºas de c├ílculo
+    // Aceitar uma margem de ±2 dias para compensar diferenças de cálculo
     const daysDiff = Math.abs((startTime - threeMonthsAgoTime) / (1000 * 60 * 60 * 24))
     if (daysDiff <= 2 && endTime >= nowTime - 86400000) {
       return 'thisQuarter'
     }
     
-    // Verificar se ├® "Este Ano"
+    // Verificar se é "Este Ano"
     const thisYearStart = new Date(now.getFullYear(), 0, 1)
     const thisYearStartTime = normalizeDate(thisYearStart)
     if (startTime === thisYearStartTime && endTime >= nowTime - 86400000) {
       return 'thisYear'
     }
     
-    // Se n├úo corresponde a nenhum preset, usar "├Ültimos 7 dias" como padr├úo
+    // Se não corresponde a nenhum preset, usar "Últimos 7 dias" como padrão
     return 'last7days'
   }
 
   const handlePresetChange = (preset: DateRangePreset) => {
     if (preset === 'custom') {
-      // Para custom, manter as datas atuais ou usar um per├¡odo padr├úo
+      // Para custom, manter as datas atuais ou usar um período padrão
       return
     }
     
@@ -279,7 +279,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
     
     const { start, end } = getDateRangeForPreset(preset)
     
-     // Log simples do per├¡odo selecionado
+     // Log simples do período selecionado
     console.log(
       `period preset=${preset} start=${start.toISOString()} end=${end.toISOString()}`,
     )
@@ -336,14 +336,14 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
           <div className="header-left-group">
             <img 
               src="https://1031175002200b361ff427a3391f739a.cdn.bubble.io/f1725666407339x738660638395827200/marca-casual-pt-internas.svg?_gl=1*gwftgc*_gcl_au*ODU3OTU3Njg5LjE3NjMxNDQxMDU.*_ga*MTYxNTMyMzA4Ni4xNzYzMTQ0MTA1*_ga_BFPVR2DEE2*czE3NjM5ODQ5NzEkbzUkZzEkdDE3NjM5OTE4NzMkajU4JGwwJGgw" 
-              alt="Casual M├│veis" 
+              alt="Casual Móveis" 
               className="header-logo-img"
             />
             <div className="header-title-wrapper">
               <h3 className="page-title">Dashboard Executivo - CRM</h3>
               <p className="page-subtitle">
-                {activeTab === 'status' && 'Margem & Rentabilidade - An├ílise de Margens'}
-                {activeTab === 'margin' && 'Margem & Rentabilidade - An├ílise de margens'}
+                {activeTab === 'status' && 'Margem & Rentabilidade - Análise de Margens'}
+                {activeTab === 'margin' && 'Margem & Rentabilidade - Análise de margens'}
                 {activeTab === 'performance' && 'Performance Comercial - Vendedores e arquitetos'}
                 {activeTab === 'rankings' && 'TOP 10 Rankings - Produtos e clientes'}
               </p>
@@ -474,7 +474,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
                         </div>
                         <div className="react-datepicker__header-dates">
                           <span className="react-datepicker__start-date">
-                            In├¡cio: {formatDate(startDate)}
+                            Início: {formatDate(startDate)}
                           </span>
                           <span className="react-datepicker__end-date">
                             Fim: {formatDate(endDate)}
@@ -494,18 +494,18 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
             value={getCurrentPreset()}
             onChange={(e) => handlePresetChange(e.target.value as DateRangePreset)}
           >
-            <option value="last7days">├Ültimos 7 dias</option>
-            <option value="thisMonth">Este M├¬s</option>
+            <option value="last7days">Últimos 7 dias</option>
+            <option value="thisMonth">Este Mês</option>
             <option value="thisQuarter">Este Trimestre</option>
             <option value="thisYear">Este Ano</option>
-            {isCustomDateRange && <option value="custom">Per├¡odo Customizado</option>}
+            {isCustomDateRange && <option value="custom">Período Customizado</option>}
           </select>
           <select
             className="filter-button"
             value={filters.nucleo || ''}
             onChange={(e) => handleNucleoChange(e.target.value as Nucleo || null)}
           >
-            <option value="">Todos N├║cleos</option>
+            <option value="">Todos Núcleos</option>
             {filterOptions.nucleos.map(nucleo => (
               <option key={nucleo.id} value={nucleo.id}>{nucleo.name}</option>
             ))}
@@ -527,7 +527,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
               onChange={(e) => handleStatusChange(e.target.value as OrcamentoStatusFilter || null)}
             >
               <option value="">Todos Status</option>
-              <option value="Em Aprova├º├úo">Em Aprova├º├úo</option>
+              <option value="Em Aprovação">Em Aprovação</option>
               <option value="Enviado">Enviado</option>
               <option value="Aprovado">Aprovado</option>
               <option value="Reprovado">Reprovado</option>

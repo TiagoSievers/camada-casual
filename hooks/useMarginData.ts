@@ -13,6 +13,8 @@ import {
   groupOrcamentosByLoja,
   type MarginMetrics,
   type ItemOrcamento,
+  hashString,
+  getDropdownPeriodLabelFromRange,
 } from '@/lib/api'
 import { extractVendedorIds } from '@/types/dashboard'
 import type { Project, DashboardFilters, Nucleo } from '@/types/dashboard'
@@ -56,30 +58,98 @@ export function useMarginData(filters: DashboardFilters): UseMarginDataReturn {
       setError(null)
       setPreviousMonth(undefined)
 
-      // Buscar orçamentos do período atual
+      // Gerar chave de cache baseada na combinação de filtros
+      let cacheKey: string | null = null
+      let timestampKey: string | null = null
+
+      if (typeof window !== 'undefined') {
+        try {
+          // Normalizar datas para o cache
+          let startDate: string | null = null
+          let endDate: string | null = null
+          if (filters.dateRange) {
+            const start = new Date(filters.dateRange.start)
+            const end = new Date(filters.dateRange.end)
+            start.setHours(0, 0, 0, 0)
+            end.setHours(23, 59, 59, 999)
+            startDate = start.toISOString().split('T')[0]
+            endDate = end.toISOString().split('T')[0]
+          }
+
+          const cachePayload = {
+            tipo: 'margem_rentabilidade',
+            startDate,
+            endDate,
+            nucleo: filters.nucleo || null,
+            loja: filters.loja || null,
+            vendedor: filters.vendedor || null,
+            arquiteto: filters.arquiteto || null,
+          }
+
+          const cacheHash = hashString(JSON.stringify(cachePayload))
+          cacheKey = `margin_cache_${cacheHash}`
+          timestampKey = `${cacheKey}_timestamp`
+
+          // Tentar usar resultado final em cache (válido por 30 minutos)
+          const cachedData = localStorage.getItem(cacheKey)
+          const cachedTimestamp = localStorage.getItem(timestampKey)
+          if (cachedData && cachedTimestamp) {
+            const timestamp = parseInt(cachedTimestamp, 10)
+            const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+            if (ageInMinutes < 30) {
+              try {
+                const parsed = JSON.parse(cachedData)
+                const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+          console.log(
+            `[CACHE HIT] margin_cache HIT key=${cacheKey} periodo=${periodLabel} nucleo=${cachePayload.nucleo ?? 'Todos'} loja=${cachePayload.loja ?? 'Todas'} vendedor=${cachePayload.vendedor ?? 'Todos'} arquiteto=${cachePayload.arquiteto ?? 'Todos'}`,
+          )
+          console.log(`[CACHE HIT] Resultado encontrado em cache - ETAPAS 1-6 foram puladas (não precisa recalcular)`)
+          setGeral(parsed.geral)
+          setNucleos(parsed.nucleos)
+          setMarcas(parsed.marcas)
+          setLoading(false)
+          return
+              } catch {
+                // Erro ao parsear cache, seguir fluxo normal
+              }
+            } else {
+              const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+              console.log(
+                `[CACHE] Cache expirado (${ageInMinutes.toFixed(1)}min > 30min) - recalculando key=${cacheKey} periodo=${periodLabel}`,
+              )
+            }
+          } else {
+            const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+            console.log(
+              `[CACHE] Cache não encontrado - calculando key=${cacheKey} periodo=${periodLabel}`,
+            )
+          }
+        } catch {
+          cacheKey = null
+          timestampKey = null
+        }
+      }
+
+      // ETAPA 1: Buscar orçamentos do período atual
+      console.log(`[ETAPA 1] Buscando orçamentos do período com filtros aplicados...`)
       const orcamentos = await fetchAllOrcamentos({
         dateRange: filters.dateRange,
         removido: false,
         status: ['Enviado ao cliente', 'Aprovado pelo cliente', 'Liberado para pedido'],
       })
+      console.log(`[ETAPA 1] Orçamentos encontrados: ${orcamentos.length}`)
 
-      // Log: valor_final_taxas e orcamento_versao_list de cada orçamento
-      orcamentos.forEach((orcamento, index) => {
-        const valorFinalTaxas = Number((orcamento as any).valor_final_taxas ?? (orcamento as any)['Valor_final_taxas'] ?? 0) || 0
-        const orcamentoVersaoList = (orcamento as any).orcamento_versao_list ?? []
-        console.log(
-          `orcamento[${index}] id=${orcamento._id} valor_final_taxas=${valorFinalTaxas.toFixed(2)} orcamento_versao_list=[${orcamentoVersaoList.join(', ')}]`,
-        )
-      })
-
-      // Buscar projetos para mapear núcleos
+      // ETAPA 2: Buscar projetos para mapear núcleos
+      console.log(`[ETAPA 2] Buscando projetos para mapear núcleos...`)
       const allProjects = await fetchProjects()
       const projectsMap = new Map<string, Project>()
       allProjects.forEach(project => {
         projectsMap.set(project._id, project)
       })
+      console.log(`[ETAPA 2] Projetos encontrados: ${allProjects.length}`)
 
-      // Buscar lojas para nomes
+      // ETAPA 3: Buscar lojas para nomes
+      console.log(`[ETAPA 3] Buscando lojas para nomes...`)
       const lojasList = await fetchLojas(false) // false = use cache if available
       const lojasNamesMap = new Map<string, string>()
       lojasList.forEach(loja => {
@@ -87,8 +157,16 @@ export function useMarginData(filters: DashboardFilters): UseMarginDataReturn {
         const name = loja.nome_da_loja || loja._id
         lojasNamesMap.set(loja._id, name)
       })
+      console.log(`[ETAPA 3] Lojas encontradas: ${lojasNamesMap.size}`)
 
-      // Filtrar projetos conforme filtros aplicados
+      // ETAPA 4: Filtrar projetos e orçamentos conforme filtros aplicados
+      console.log(`[ETAPA 4] Filtrando projetos e orçamentos conforme filtros:`, {
+        periodo: filters.dateRange ? `${new Date(filters.dateRange.start).toISOString().split('T')[0]} a ${new Date(filters.dateRange.end).toISOString().split('T')[0]}` : 'Todos',
+        nucleo: filters.nucleo || 'Todos',
+        loja: filters.loja || 'Todas',
+        vendedor: filters.vendedor || 'Todos',
+        arquiteto: filters.arquiteto || 'Todos',
+      })
       const filteredProjects = allProjects.filter(project => {
         // Filtro de data
         if (filters.dateRange) {
@@ -137,8 +215,10 @@ export function useMarginData(filters: DashboardFilters): UseMarginDataReturn {
         
         return filteredProjects.some(p => p._id === projetoId)
       })
+      console.log(`[ETAPA 4] Projetos filtrados: ${filteredProjects.length} de ${allProjects.length}, Orçamentos filtrados: ${filteredOrcamentos.length} de ${orcamentos.length}`)
 
-      // Coletar todos os IDs de item_orcamento_list de todos os orçamentos filtrados
+      // ETAPA 5: Buscar itens de orçamento
+      console.log(`[ETAPA 5] Coletando IDs de itens de orçamento...`)
       const itemOrcamentoIds = new Set<string>()
       filteredOrcamentos.forEach(orcamento => {
         const itemList = (orcamento as any).item_orcamento_list
@@ -146,9 +226,11 @@ export function useMarginData(filters: DashboardFilters): UseMarginDataReturn {
           itemList.forEach((id: string) => itemOrcamentoIds.add(id))
         }
       })
-
-      // Buscar todos os itens de orçamento pelos IDs coletados
+      console.log(`[ETAPA 5] Total de IDs de itens coletados: ${itemOrcamentoIds.size}`)
+      
+      console.log(`[ETAPA 5] Buscando itens de orçamento da API...`)
       const allItemOrcamentos = await fetchItemOrcamentosByIds(Array.from(itemOrcamentoIds))
+      console.log(`[ETAPA 5] Itens de orçamento encontrados: ${allItemOrcamentos.length}`)
 
       // Criar mapa de itens por orçamento (usando item_orcamento_list como chave)
       const itensPorOrcamento = new Map<string, ItemOrcamento[]>()
@@ -162,63 +244,19 @@ export function useMarginData(filters: DashboardFilters): UseMarginDataReturn {
         }
       })
 
-      // Log: rentabilidade de cada orçamento
-      // Faturamento Líquido = "Valor_final_produtos"
-      // Custo do Produto = somatória da lista de item_orcamento
-      let somaRentabilidade = 0
-      let somaFaturamentoLiquido = 0
-      let countFaturamentoLiquidoMaiorQueZero = 0
+      // ETAPA 6: Calcular métricas de margem
+      console.log(`[ETAPA 6] Calculando métricas de margem...`)
       
-      filteredOrcamentos.forEach((orcamento, index) => {
-        // Faturamento Líquido = "Valor_final_produtos"
-        const faturamentoLiquido = Number(
-          (orcamento as any)['Valor_final_produtos'] ??
-            (orcamento as any).valor_final_produtos ??
-            0
-        ) || 0
-        
-        // Contar faturamentos líquidos > 0
-        if (faturamentoLiquido > 0) {
-          countFaturamentoLiquidoMaiorQueZero++
-        }
-        
-        // Custo do Produto = somatória da lista de item_orcamento
-        const itensDoOrcamento = itensPorOrcamento.get(orcamento._id) ?? []
-        const custoDoProduto = itensDoOrcamento.reduce((sum, item) => {
-          return sum + (Number(item.custo_total) || 0)
-        }, 0)
-        
-        // Rentabilidade = Faturamento Líquido - Custo do Produto
-        const rentabilidade = faturamentoLiquido - custoDoProduto
-        
-        somaRentabilidade += rentabilidade
-        somaFaturamentoLiquido += faturamentoLiquido
-        
-        console.log(
-          `orcamento[${index}] id=${orcamento._id} faturamento_liquido=${faturamentoLiquido.toFixed(2)} custo_do_produto=${custoDoProduto.toFixed(2)} rentabilidade=${rentabilidade.toFixed(2)}`,
-        )
-      })
-
-      // Log: Margem Geral = somatória (Rentabilidade) / somatória (Faturamento Líquido)
-      const margemGeral = somaFaturamentoLiquido > 0 ? (somaRentabilidade / somaFaturamentoLiquido) * 100 : 0
-      console.log(
-        `margem_geral soma_rentabilidade=${somaRentabilidade.toFixed(2)} soma_faturamento_liquido=${somaFaturamentoLiquido.toFixed(2)} margem_geral=${margemGeral.toFixed(2)}%`,
-      )
-
-      // Log: Margem Ponderada Núcleos = média do Faturamento Líquido
-      const mediaFaturamentoLiquido = filteredOrcamentos.length > 0 ? somaFaturamentoLiquido / filteredOrcamentos.length : 0
-      console.log(
-        `margem_ponderada_nucleos total_orcamentos=${filteredOrcamentos.length} soma_faturamento_liquido=${somaFaturamentoLiquido.toFixed(2)} media_faturamento_liquido=${mediaFaturamentoLiquido.toFixed(2)}`,
-      )
-
-      // Log: contagem de faturamentos líquidos > 0
-      console.log(
-        `faturamentos_liquidos_maior_que_zero total_orcamentos=${filteredOrcamentos.length} count_faturamento_liquido_maior_que_zero=${countFaturamentoLiquidoMaiorQueZero}`,
-      )
-
       // Calcular métricas gerais
       const geralMetrics = calculateMarginMetrics(filteredOrcamentos, itensPorOrcamento)
       setGeral(geralMetrics)
+      
+      console.log(`[ETAPA 6] Métricas gerais calculadas:`, {
+        lucro: geralMetrics.lucro.toFixed(2),
+        receita: geralMetrics.receita.toFixed(2),
+        margem: `${geralMetrics.margem.toFixed(2)}%`,
+        total_orcamentos: filteredOrcamentos.length,
+      })
 
       // Agrupar por núcleo
       const nucleosMap = groupOrcamentosByNucleo(filteredOrcamentos, projectsMap, itensPorOrcamento)
@@ -231,6 +269,7 @@ export function useMarginData(filters: DashboardFilters): UseMarginDataReturn {
         }))
         .sort((a, b) => b.receita - a.receita)
       setNucleos(nucleosData)
+      console.log(`[ETAPA 6] Métricas por núcleo calculadas: ${nucleosData.length} núcleos`)
 
       // Agrupar por loja (marca)
       const lojasMap = groupOrcamentosByLoja(filteredOrcamentos, projectsMap, lojasNamesMap, itensPorOrcamento)
@@ -243,6 +282,27 @@ export function useMarginData(filters: DashboardFilters): UseMarginDataReturn {
         }))
         .sort((a, b) => b.receita - a.receita)
       setMarcas(marcasData)
+      console.log(`[ETAPA 6] Métricas por loja calculadas: ${marcasData.length} lojas`)
+
+      // Salvar resultado final no cache
+      if (typeof window !== 'undefined' && cacheKey && timestampKey) {
+        try {
+          const resultToCache = {
+            geral: geralMetrics,
+            nucleos: nucleosData,
+            marcas: marcasData,
+          }
+          localStorage.setItem(cacheKey, JSON.stringify(resultToCache))
+          localStorage.setItem(timestampKey, Date.now().toString())
+          // ETAPA 7: Salvar resultado final no cache
+          const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+          console.log(
+            `[ETAPA 7] margin_cache SAVE key=${cacheKey} periodo=${periodLabel} nucleo=${filters.nucleo ?? 'Todos'} loja=${filters.loja ?? 'Todas'} vendedor=${filters.vendedor ?? 'Todos'} arquiteto=${filters.arquiteto ?? 'Todos'} geral_lucro=${geralMetrics.lucro.toFixed(2)} geral_receita=${geralMetrics.receita.toFixed(2)} geral_margem=${geralMetrics.margem.toFixed(2)}%`,
+          )
+        } catch (error) {
+          console.log(`[ETAPA 7] Erro ao salvar cache key=${cacheKey} error=${error}`)
+        }
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados de margem')

@@ -90,7 +90,7 @@
 }
 
 .funnel-info-banner {
-  display: flex;
+  display: none; /* Oculto conforme solicitado */
   flex-direction: row;
   align-items: flex-start;
   padding: 16px;

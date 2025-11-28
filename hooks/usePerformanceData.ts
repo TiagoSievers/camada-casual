@@ -9,6 +9,8 @@ import {
   fetchVendedores,
   fetchArquitetos,
   calculateOrcamentoMargin,
+  hashString,
+  getDropdownPeriodLabelFromRange,
 } from '@/lib/api'
 import { extractVendedorIds } from '@/types/dashboard'
 import type { DashboardFilters, Project } from '@/types/dashboard'
@@ -30,25 +32,32 @@ interface UsePerformanceDataReturn {
   refreshArquitetos: () => Promise<void>
 }
 
-// Função para gerar chave de cache baseada nos filtros
-const getCacheKey = (filters: DashboardFilters, type: 'vendedores' | 'arquitetos' | 'all'): string => {
-  const key = JSON.stringify({
-    start: filters.dateRange?.start,
-    end: filters.dateRange?.end,
-    nucleo: filters.nucleo,
-    loja: filters.loja,
-    vendedor: filters.vendedor,
-    arquiteto: filters.arquiteto,
-    type,
-  })
-  // Criar hash simples da chave
-  let hash = 0
-  for (let i = 0; i < key.length; i++) {
-    const char = key.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32bit integer
+// Função para gerar chave de cache baseada nos filtros (usando hashString como nas outras páginas)
+const getCacheKey = (filters: DashboardFilters): string => {
+  // Normalizar datas para o cache
+  let startDate: string | null = null
+  let endDate: string | null = null
+  if (filters.dateRange) {
+    const start = new Date(filters.dateRange.start)
+    const end = new Date(filters.dateRange.end)
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+    startDate = start.toISOString().split('T')[0]
+    endDate = end.toISOString().split('T')[0]
   }
-  return `performance_cache_${type}_${Math.abs(hash).toString(36)}`
+
+  const cachePayload = {
+    tipo: 'performance_comercial',
+    startDate,
+    endDate,
+    nucleo: filters.nucleo || null,
+    loja: filters.loja || null,
+    vendedor: filters.vendedor || null,
+    arquiteto: filters.arquiteto || null,
+  }
+
+  const cacheHash = hashString(JSON.stringify(cachePayload))
+  return `performance_cache_${cacheHash}`
 }
 
 export function usePerformanceData(filters: DashboardFilters): UsePerformanceDataReturn {
@@ -62,45 +71,78 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
       setLoading(true)
       setError(null)
 
-      // Verificar cache do resultado final
-      if (useCache && typeof window !== 'undefined') {
-        const cacheKey = getCacheKey(filters, 'all')
-        const cachedResult = localStorage.getItem(cacheKey)
-        const cachedTimestamp = localStorage.getItem(`${cacheKey}_timestamp`)
-        
-        if (cachedResult && cachedTimestamp) {
-          const timestamp = parseInt(cachedTimestamp, 10)
-          const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
-          
-          // Usar cache se tiver menos de 5 minutos
-          if (ageInMinutes < 5) {
-            const cached = JSON.parse(cachedResult)
-            console.log(`💾 [PERFORMANCE] Usando cache de resultados (${ageInMinutes.toFixed(1)}min atrás)`)
-            setVendedores(cached.vendedores || [])
-            setArquitetos(cached.arquitetos || [])
-            setLoading(false)
-            return
+      // Gerar chave de cache baseada na combinação de filtros
+      let cacheKey: string | null = null
+      let timestampKey: string | null = null
+
+      if (typeof window !== 'undefined') {
+        try {
+          cacheKey = getCacheKey(filters)
+          timestampKey = `${cacheKey}_timestamp`
+
+          // Verificar cache do resultado final (válido por 30 minutos)
+          if (useCache) {
+            const cachedResult = localStorage.getItem(cacheKey)
+            const cachedTimestamp = localStorage.getItem(timestampKey)
+            
+            if (cachedResult && cachedTimestamp) {
+              const timestamp = parseInt(cachedTimestamp, 10)
+              const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+              
+              if (ageInMinutes < 30) {
+                try {
+                  const cached = JSON.parse(cachedResult)
+                  const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+                  console.log(
+                    `[CACHE HIT] performance_cache HIT key=${cacheKey} periodo=${periodLabel} nucleo=${filters.nucleo ?? 'Todos'} loja=${filters.loja ?? 'Todas'} vendedor=${filters.vendedor ?? 'Todos'} arquiteto=${filters.arquiteto ?? 'Todos'}`,
+                  )
+                  console.log(`[CACHE HIT] Resultado encontrado em cache - ETAPAS 1-5 foram puladas (não precisa recalcular)`)
+                  setVendedores(cached.vendedores || [])
+                  setArquitetos(cached.arquitetos || [])
+                  setLoading(false)
+                  return
+                } catch {
+                  // Erro ao parsear cache, seguir fluxo normal
+                }
+              } else {
+                const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+                console.log(
+                  `[CACHE] Cache expirado (${ageInMinutes.toFixed(1)}min > 30min) - recalculando key=${cacheKey} periodo=${periodLabel}`,
+                )
+              }
+            } else {
+              const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+              console.log(
+                `[CACHE] Cache não encontrado - calculando key=${cacheKey} periodo=${periodLabel}`,
+              )
+            }
           }
+        } catch {
+          cacheKey = null
+          timestampKey = null
         }
       }
 
-      console.log('🔵 [PERFORMANCE] Iniciando cálculo de Performance Comercial')
-
-      // Buscar orçamentos do período atual
+      // ETAPA 1: Buscar orçamentos do período atual
+      console.log(`[ETAPA 1] Buscando orçamentos do período com filtros aplicados...`)
       const orcamentos = await fetchAllOrcamentos({
         dateRange: filters.dateRange,
         removido: false,
         status: ['Enviado ao cliente', 'Aprovado pelo cliente', 'Liberado para pedido'],
       })
+      console.log(`[ETAPA 1] Orçamentos encontrados: ${orcamentos.length}`)
 
-      // Buscar projetos
+      // ETAPA 2: Buscar projetos
+      console.log(`[ETAPA 2] Buscando projetos...`)
       const allProjects = await fetchProjects()
       const projectsMap = new Map<string, Project>()
       allProjects.forEach(project => {
         projectsMap.set(project._id, project)
       })
+      console.log(`[ETAPA 2] Projetos encontrados: ${allProjects.length}`)
 
-      // Buscar vendedores para obter nomes (usando cache por padrão)
+      // ETAPA 3: Buscar vendedores para obter nomes (usando cache por padrão)
+      console.log(`[ETAPA 3] Buscando vendedores para mapear nomes...`)
       const vendedoresList = await fetchVendedores(false) // false = usar cache se disponível
       const vendedoresNamesMap = new Map<string, string>()
       vendedoresList.forEach(vendedor => {
@@ -111,10 +153,10 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
         const name = vendedor.nome || vendedor._id
         vendedoresNamesMap.set(vendedor._id, name)
       })
-      console.log('🔵 [PERFORMANCE] Total de vendedores encontrados:', vendedoresList.length)
-      console.log('🔵 [PERFORMANCE] Vendedores ativos no mapa:', vendedoresNamesMap.size)
+      console.log(`[ETAPA 3] Vendedores encontrados: ${vendedoresList.length}, vendedores ativos: ${vendedoresNamesMap.size}`)
 
-      // Buscar arquitetos para obter nomes (usando cache por padrão)
+      // ETAPA 4: Buscar arquitetos para obter nomes (usando cache por padrão)
+      console.log(`[ETAPA 4] Buscando arquitetos para mapear nomes...`)
       const arquitetosList = await fetchArquitetos(false) // false = usar cache se disponível
       const arquitetosNamesMap = new Map<string, string>()
       arquitetosList.forEach(arquiteto => {
@@ -125,10 +167,16 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
         const name = arquiteto['Nome do Arquiteto'] || arquiteto._id
         arquitetosNamesMap.set(arquiteto._id, name)
       })
-      console.log('🔵 [PERFORMANCE] Total de arquitetos encontrados:', arquitetosList.length)
-      console.log('🔵 [PERFORMANCE] Arquitetos ativos no mapa:', arquitetosNamesMap.size)
+      console.log(`[ETAPA 4] Arquitetos encontrados: ${arquitetosList.length}, arquitetos ativos: ${arquitetosNamesMap.size}`)
 
-      // Filtrar projetos conforme filtros aplicados
+      // ETAPA 5: Filtrar projetos e orçamentos conforme filtros aplicados
+      console.log(`[ETAPA 5] Filtrando projetos e orçamentos conforme filtros:`, {
+        periodo: filters.dateRange ? `${new Date(filters.dateRange.start).toISOString().split('T')[0]} a ${new Date(filters.dateRange.end).toISOString().split('T')[0]}` : 'Todos',
+        nucleo: filters.nucleo || 'Todos',
+        loja: filters.loja || 'Todas',
+        vendedor: filters.vendedor || 'Todos',
+        arquiteto: filters.arquiteto || 'Todos',
+      })
       const filteredProjects = allProjects.filter(project => {
         // Filtro de data
         if (filters.dateRange) {
@@ -177,8 +225,10 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
         
         return filteredProjects.some(p => p._id === projetoId)
       })
+      console.log(`[ETAPA 5] Projetos filtrados: ${filteredProjects.length} de ${allProjects.length}, Orçamentos filtrados: ${filteredOrcamentos.length} de ${orcamentos.length}`)
 
-      // Calcular performance de vendedores (receita total)
+      // ETAPA 6: Calcular performance de vendedores (receita total)
+      console.log(`[ETAPA 6] Calculando performance de vendedores...`)
       const vendedoresPerformanceMap = new Map<string, { receita: number; trends: Map<string, number> }>()
       
       filteredOrcamentos.forEach(orcamento => {
@@ -244,8 +294,10 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
         .slice(0, 5) // Top 5
 
       setVendedores(vendedoresData)
+      console.log(`[ETAPA 6] Performance de vendedores calculada: ${vendedoresData.length} vendedores`)
 
-      // Calcular performance de arquitetos (número de projetos)
+      // ETAPA 7: Calcular performance de arquitetos (número de projetos)
+      console.log(`[ETAPA 7] Calculando performance de arquitetos...`)
       const arquitetosPerformanceMap = new Map<string, { count: number; trends: Map<string, number> }>()
       
       filteredProjects.forEach(project => {
@@ -296,17 +348,24 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
         .slice(0, 5) // Top 5
 
       setArquitetos(arquitetosData)
+      console.log(`[ETAPA 7] Performance de arquitetos calculada: ${arquitetosData.length} arquitetos`)
       
-      // Salvar no cache
-      if (typeof window !== 'undefined') {
-        const cacheKey = getCacheKey(filters, 'all')
-        const cacheData = {
-          vendedores: vendedoresData,
-          arquitetos: arquitetosData,
+      // ETAPA 8: Salvar resultado final no cache
+      if (typeof window !== 'undefined' && cacheKey && timestampKey) {
+        try {
+          const cacheData = {
+            vendedores: vendedoresData,
+            arquitetos: arquitetosData,
+          }
+          localStorage.setItem(cacheKey, JSON.stringify(cacheData))
+          localStorage.setItem(timestampKey, Date.now().toString())
+          const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+          console.log(
+            `[ETAPA 8] performance_cache SAVE key=${cacheKey} periodo=${periodLabel} nucleo=${filters.nucleo ?? 'Todos'} loja=${filters.loja ?? 'Todas'} vendedor=${filters.vendedor ?? 'Todos'} arquiteto=${filters.arquiteto ?? 'Todos'} total_vendedores=${vendedoresData.length} total_arquitetos=${arquitetosData.length}`,
+          )
+        } catch (error) {
+          console.log(`[ETAPA 8] Erro ao salvar cache key=${cacheKey} error=${error}`)
         }
-        localStorage.setItem(cacheKey, JSON.stringify(cacheData))
-        localStorage.setItem(`${cacheKey}_timestamp`, Date.now().toString())
-        console.log(`💾 [PERFORMANCE] Resultados salvos no cache`)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados de performance')
@@ -327,7 +386,7 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
       if (typeof window !== 'undefined') {
         localStorage.removeItem('casual_crm_vendedores_cache')
         localStorage.removeItem('casual_crm_vendedores_cache_timestamp')
-        const cacheKey = getCacheKey(filters, 'all')
+        const cacheKey = getCacheKey(filters)
         localStorage.removeItem(cacheKey)
         localStorage.removeItem(`${cacheKey}_timestamp`)
       }
@@ -361,7 +420,7 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
       if (typeof window !== 'undefined') {
         localStorage.removeItem('casual_crm_arquitetos_cache')
         localStorage.removeItem('casual_crm_arquitetos_cache_timestamp')
-        const cacheKey = getCacheKey(filters, 'all')
+        const cacheKey = getCacheKey(filters)
         localStorage.removeItem(cacheKey)
         localStorage.removeItem(`${cacheKey}_timestamp`)
       }

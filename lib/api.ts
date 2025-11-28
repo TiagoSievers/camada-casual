@@ -101,6 +101,8 @@ function clearExpiredCaches() {
       'casual_crm_clientes_cache',
       'casual_crm_lojas_cache',
       'performance_cache_',
+      'funnel_cache_',
+      'funnel_cache_',
     ]
 
     // Iterar sobre todas as chaves do localStorage
@@ -293,7 +295,7 @@ export interface LojasResponse {
 /**
  * Gera hash simples de uma string
  */
-function hashString(str: string): string {
+export function hashString(str: string): string {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i)
@@ -305,7 +307,8 @@ function hashString(str: string): string {
 
 /**
  * Gera chave de cache baseada em todos os filtros
- * Inclui: período, status, núcleo, loja, vendedor, arquiteto
+ * Para projetos: inclui período, núcleo, loja, vendedor, arquiteto (status é aplicado depois na ETAPA 2)
+ * Para orçamentos: inclui período, status, removido
  * Suporta períodos customizados do calendário
  */
 function getCacheKeyForFilters(
@@ -321,13 +324,21 @@ function getCacheKeyForFilters(
   const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) : 'Últimos 7 dias'
   
   // Criar objeto com todos os filtros para gerar hash
+  // IMPORTANTE: Para projetos, incluímos todos os filtros que afetam a busca da API
+  // (núcleo, loja, vendedor, arquiteto são aplicados no frontend, mas incluímos na chave
+  // para garantir cache correto quando os mesmos filtros são aplicados)
   const filterKey: any = {
-    status: filters.status || null,
     nucleo: filters.nucleo || null,
     loja: filters.loja || null,
     vendedor: filters.vendedor || null,
     arquiteto: filters.arquiteto || null,
   }
+
+  // Para orçamentos, incluir status e removido
+  if (dataType === 'orcamentos') {
+    filterKey.status = filters.status || null
+  }
+  // Para projetos, NÃO incluímos status aqui porque ele é aplicado depois na ETAPA 2
 
   // Se for período customizado, usar as datas exatas
   if (!periodLabel && filters.dateRange) {
@@ -426,12 +437,20 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
           
           // Cache válido por 30 minutos
           if (ageInMinutes < 30) {
+            console.log(`[ETAPA 1] (CACHE) projeto api result total_projetos=${projects.length} key=${cacheKey} age=${ageInMinutes.toFixed(1)}min`)
             return projects
+          } else {
+            console.log(`[ETAPA 1] Cache expirado (${ageInMinutes.toFixed(1)}min > 30min) - buscando da API key=${cacheKey}`)
           }
+        } else {
+          console.log(`[ETAPA 1] Cache não encontrado - buscando da API key=${cacheKey}`)
         }
       } catch (error) {
+        console.log(`[ETAPA 1] Erro ao ler cache - buscando da API key=${cacheKey} error=${error}`)
         // Ignorar erros de leitura de cache
       }
+    } else {
+      console.log(`[ETAPA 1] Cache desabilitado (cacheKey=${cacheKey ? 'ok' : 'null'}, window=${typeof window !== 'undefined'}) - buscando da API`)
     }
 
     const allProjects: Project[] = []
@@ -455,7 +474,7 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
     start.setHours(0, 0, 0, 0)
     end.setHours(23, 59, 59, 999)
 
-    const baseConstraints = [
+    const baseConstraints: any[] = [
       {
         key: 'Created Date',
         constraint_type: 'greater than',
@@ -468,9 +487,55 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
       },
     ]
 
+    // Adicionar filtro de núcleo se houver
+    if (filters?.nucleo) {
+      baseConstraints.push({
+        key: 'nucleo_lista',
+        constraint_type: 'contains',
+        value: filters.nucleo,
+      })
+    }
+
+    // Adicionar filtro de loja se houver
+    if (filters?.loja) {
+      baseConstraints.push({
+        key: 'loja',
+        constraint_type: 'equals',
+        value: filters.loja,
+      })
+    }
+
+    // Adicionar filtro de vendedor se houver
+    // Nota: vendedor pode estar em vários campos, então aplicamos no frontend
+    // Mas podemos tentar filtrar pelo campo principal se existir
+    if (filters?.vendedor) {
+      // Vendedor pode estar em diferentes campos dependendo do núcleo
+      // Por enquanto, vamos aplicar no frontend, mas podemos adicionar aqui se necessário
+    }
+
+    // Adicionar filtro de arquiteto se houver
+    if (filters?.arquiteto) {
+      baseConstraints.push({
+        key: 'arquiteto',
+        constraint_type: 'equals',
+        value: filters.arquiteto,
+      })
+    }
+
+    // Log: informações dos filtros aplicados
+    console.log(`[ETAPA 1] Chamada API - Filtros aplicados:`, {
+      periodo: filters?.dateRange ? `${start.toISOString().split('T')[0]} a ${end.toISOString().split('T')[0]}` : 'Últimos 7 dias',
+      nucleo: filters?.nucleo || 'Todos',
+      loja: filters?.loja || 'Todas',
+      vendedor: filters?.vendedor || 'Todos',
+      arquiteto: filters?.arquiteto || 'Todos',
+      status: filters?.status || 'Todos (aplicado depois na ETAPA 2)',
+    })
+
     let cursor = 0
     let hasMore = true
     let pageNumber = 1
+    let totalPages = 0
 
     while (hasMore) {
       const url = new URL(`${API_BASE_URL}/obj/projeto`)
@@ -483,23 +548,41 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
 
       // Constraints de data (copiados a cada página)
       url.searchParams.set('constraints', JSON.stringify(baseConstraints))
+      
+      // Log: URL e query completa da chamada API
+      console.log(`[ETAPA 1] API Request - Página ${pageNumber}:`, {
+        url: url.toString(),
+        method: 'GET',
+        constraints: baseConstraints,
+        cursor: cursor || 0,
+        limit: 100,
+      })
     
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
     
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar projetos: ${response.statusText}`)
-    }
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar projetos: ${response.statusText}`)
+      }
     
-    const data: ProjectsResponse = await response.json()
+      const data: ProjectsResponse = await response.json()
       const results = data.response.results || []
       const remaining = data.response.remaining ?? 0
 
+      // Log: resultado da API
+      console.log(`[ETAPA 1] API Response - Página ${pageNumber}:`, {
+        projetos_retornados: results.length,
+        projetos_restantes: remaining,
+        cursor_atual: data.response.cursor,
+        total_projetos_acumulados: allProjects.length + results.length,
+      })
+
       allProjects.push(...results)
+      totalPages = pageNumber
 
       hasMore = remaining > 0 && results.length > 0
 
@@ -509,8 +592,21 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
       }
     }
 
-    // Log da quantidade de projetos retornados
-    console.log(`projeto api result total_projetos=${allProjects.length}`)
+    // Log: resumo final da chamada API
+    console.log(`[ETAPA 1] API Resumo Final:`, {
+      total_paginas: totalPages,
+      total_projetos: allProjects.length,
+      periodo: `${start.toISOString().split('T')[0]} a ${end.toISOString().split('T')[0]}`,
+      filtros: {
+        nucleo: filters?.nucleo || 'Todos',
+        loja: filters?.loja || 'Todas',
+        vendedor: filters?.vendedor || 'Todos',
+        arquiteto: filters?.arquiteto || 'Todos',
+      },
+    })
+
+    // ETAPA 1: Buscar projetos da API com os parâmetros de acordo com o período selecionado
+    console.log(`[ETAPA 1] projeto api result total_projetos=${allProjects.length}`)
 
     // Salvar no cache se não for período customizado e se a chave ainda não existir
     if (cacheKey && timestampKey && typeof window !== 'undefined') {
@@ -521,15 +617,19 @@ export async function fetchProjects(filters?: Partial<DashboardFilters>): Promis
           // Só salvar se não existir (não sobrescrever)
           localStorage.setItem(cacheKey, JSON.stringify(allProjects))
           localStorage.setItem(timestampKey, Date.now().toString())
+          console.log(`[ETAPA 1] Cache salvo key=${cacheKey} total_projetos=${allProjects.length}`)
+        } else {
+          console.log(`[ETAPA 1] Cache já existe - não sobrescrevendo key=${cacheKey}`)
         }
   } catch (error) {
+        console.log(`[ETAPA 1] Erro ao salvar cache key=${cacheKey} error=${error}`)
         // Ignorar erros ao salvar cache
       }
     }
 
     return allProjects
   } catch (error) {
-    console.error('❌ [API] Erro ao buscar projetos:', error)
+    // console.error('❌ [API] Erro ao buscar projetos:', error)
     
     // Em caso de erro, tentar usar cache se disponível
     if (cacheKey && typeof window !== 'undefined') {
@@ -624,7 +724,40 @@ export async function filterProjectsByOrcamentoStatus(
   statusFilter: OrcamentoStatusFilter
 ): Promise<Project[]> {
   if (!statusFilter) {
+    // ETAPA 2: pulada porque não há filtro de status
+    console.log('[ETAPA 2] Nenhum filtro de status aplicado (status=Todos) - etapa ignorada')
     return projects
+  }
+
+  // Gerar chave de cache baseada nos IDs dos projetos + status
+  // Isso permite reutilizar o resultado filtrado se os mesmos projetos forem filtrados novamente
+  const projectIds = projects.map(p => p._id).sort().join(',')
+  const cacheKey = `filtered_projetos_${hashString(`${projectIds}_${statusFilter}`)}`
+  const timestampKey = `${cacheKey}_timestamp`
+
+  // Verificar cache (válido por 30 minutos)
+  if (typeof window !== 'undefined') {
+    try {
+      const cachedData = localStorage.getItem(cacheKey)
+      const cachedTimestamp = localStorage.getItem(timestampKey)
+      
+      if (cachedData && cachedTimestamp) {
+        const timestamp = parseInt(cachedTimestamp, 10)
+        const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+        
+        if (ageInMinutes < 30) {
+          const filtered = JSON.parse(cachedData) as Project[]
+          console.log(`[ETAPA 2] (CACHE) Projetos filtrados por status carregados do cache: ${filtered.length} de ${projects.length} status=${statusFilter} key=${cacheKey} age=${ageInMinutes.toFixed(1)}min`)
+          return filtered
+        } else {
+          console.log(`[ETAPA 2] Cache expirado (${ageInMinutes.toFixed(1)}min > 30min) - buscando da API status=${statusFilter} key=${cacheKey}`)
+        }
+      } else {
+        console.log(`[ETAPA 2] Cache não encontrado - buscando da API status=${statusFilter} key=${cacheKey}`)
+      }
+    } catch (error) {
+      console.log(`[ETAPA 2] Erro ao ler cache - buscando da API status=${statusFilter} error=${error}`)
+    }
   }
 
   // Coletar todos os IDs de orçamentos
@@ -639,6 +772,9 @@ export async function filterProjectsByOrcamentoStatus(
     // Se não há orçamentos, não há como filtrar por status de orçamento
     return []
   }
+
+  // ETAPA 2: Buscar os orçamentos destes projetos para filtrar por status
+  console.log(`[ETAPA 2] Filtrando projetos por status de orçamento: ${statusFilter}, total_orcamento_ids=${orcamentoIdsSet.size}`)
 
   // Buscar orçamentos em lotes
   const orcamentosMap = new Map<string, Orcamento>()
@@ -679,9 +815,24 @@ export async function filterProjectsByOrcamentoStatus(
   }
 
   // Filtrar projetos baseado no status dos orçamentos
-  return projects.filter(project => 
+  const filtered = projects.filter(project => 
     projectMatchesStatusFilter(project, orcamentosMap, statusFilter)
   )
+  
+  console.log(`[ETAPA 2] Orçamentos encontrados: ${orcamentosMap.size}, projetos filtrados: ${filtered.length} de ${projects.length}`)
+  
+  // Salvar resultado filtrado no cache
+  if (typeof window !== 'undefined' && cacheKey && timestampKey) {
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(filtered))
+      localStorage.setItem(timestampKey, Date.now().toString())
+      console.log(`[ETAPA 2] Cache salvo key=${cacheKey} projetos_filtrados=${filtered.length} de ${projects.length} status=${statusFilter}`)
+    } catch (error) {
+      console.log(`[ETAPA 2] Erro ao salvar cache key=${cacheKey} error=${error}`)
+    }
+  }
+  
+  return filtered
 }
 
 /**
@@ -757,7 +908,7 @@ export async function fetchOrcamentosFromProjects(projects: Project[]): Promise<
 /**
  * Busca todos os orçamentos da API com filtros opcionais
  */
-function getDropdownPeriodLabelFromRange(range?: { start: Date | string; end: Date | string }): string | null {
+export function getDropdownPeriodLabelFromRange(range?: { start: Date | string; end: Date | string }): string | null {
   if (!range) return 'Últimos 7 dias'
 
   const start = new Date(range.start)
@@ -909,19 +1060,19 @@ export async function fetchAllOrcamentos(filters?: {
 
         // Logs simples para inspeção:
         // 1) período aplicado
-        if (periodLabel) {
-          console.log(
-            `orcamento dateRange periodo="${periodLabel}" start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
-          )
-        } else {
-          console.log(
-            `orcamento dateRange start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
-          )
-        }
+        // if (periodLabel) {
+        //   console.log(
+        //     `orcamento dateRange periodo="${periodLabel}" start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
+        //   )
+        // } else {
+        //   console.log(
+        //     `orcamento dateRange start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
+        //   )
+        // }
         // 2) curl da chamada (apenas na primeira página)
-        if (pageNumber === 1) {
-          console.log(`curl -X GET '${url.toString()}' -H 'Content-Type: application/json'`)
-        }
+        // if (pageNumber === 1) {
+        //   console.log(`curl -X GET '${url.toString()}' -H 'Content-Type: application/json'`)
+        // }
       }
     
     const response = await fetch(url.toString(), {
@@ -997,7 +1148,7 @@ export async function fetchAllOrcamentos(filters?: {
     
     return orcamentos
   } catch (error) {
-    console.error('Erro ao buscar orçamentos:', error)
+    // console.error('Erro ao buscar orçamentos:', error)
 
     // Em caso de erro, tentar usar cache se disponível
     if (cacheKey && typeof window !== 'undefined') {
@@ -1070,7 +1221,7 @@ export async function fetchItemOrcamentosByIds(itemIds: string[]): Promise<ItemO
       })
 
       if (!response.ok) {
-        console.error(`Erro ao buscar itens de orçamento (lote ${Math.floor(i / batchSize) + 1}):`, response.statusText)
+        // console.error(`Erro ao buscar itens de orçamento (lote ${Math.floor(i / batchSize) + 1}):`, response.statusText)
         continue
       }
 
@@ -1081,7 +1232,7 @@ export async function fetchItemOrcamentosByIds(itemIds: string[]): Promise<ItemO
 
     return allItems
   } catch (error) {
-    console.error('Erro ao buscar itens de orçamento:', error)
+    // console.error('Erro ao buscar itens de orçamento:', error)
     return []
   }
 }
@@ -1186,7 +1337,7 @@ export async function fetchVendedores(forceRefresh: boolean = false): Promise<Ve
     
     return allVendedores
   } catch (error) {
-    console.error('❌ [API] Erro ao buscar vendedores:', error)
+    // console.error('❌ [API] Erro ao buscar vendedores:', error)
     
     // Em caso de erro, tentar usar cache se disponível
     if (typeof window !== 'undefined' && !forceRefresh) {
@@ -1294,7 +1445,7 @@ export async function fetchArquitetos(forceRefresh: boolean = false): Promise<Ar
     
     return allArquitetos
   } catch (error) {
-    console.error('❌ [API] Erro ao buscar arquitetos:', error)
+    // console.error('❌ [API] Erro ao buscar arquitetos:', error)
     
     // Em caso de erro, tentar usar cache se disponível
     if (typeof window !== 'undefined' && !forceRefresh) {
@@ -1400,7 +1551,7 @@ export async function fetchClientes(forceRefresh: boolean = false): Promise<Clie
     
     return allClientes
   } catch (error) {
-    console.error('❌ [API] Erro ao buscar clientes:', error)
+    // console.error('❌ [API] Erro ao buscar clientes:', error)
     
     // Em caso de erro, tentar usar cache se disponível
     if (typeof window !== 'undefined' && !forceRefresh) {
@@ -1506,7 +1657,7 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
     
     return allLojas
   } catch (error) {
-    console.error('❌ [API] Erro ao buscar lojas:', error)
+    // console.error('❌ [API] Erro ao buscar lojas:', error)
     
     // Em caso de erro, tentar usar cache se disponível
     if (typeof window !== 'undefined' && !forceRefresh) {
@@ -1698,10 +1849,95 @@ export async function calculateFunnelMetrics(
   funnelType: FunnelType,
   comparePrevious?: boolean,
   dateRange?: { start: Date | string; end: Date | string },
-  useOrcamentos: boolean = false // Novo parâmetro: se false, não busca orçamentos (Status de Projetos)
+  useOrcamentos: boolean = false, // Novo parâmetro: se false, não busca orçamentos (Status de Projetos)
+  filters?: Partial<DashboardFilters> // Filtros completos para gerar chave de cache baseada na combinação
 ) {
+  // Gerar chave de cache baseada na combinação de filtros
+  // Assim conseguimos reutilizar diretamente o resultado final do funil,
+  // sem precisar refazer todas as chamadas de API e cálculos.
+  let cacheKey: string | null = null
+  let timestampKey: string | null = null
+
+  if (typeof window !== 'undefined' && projects.length > 0 && filters) {
+    try {
+      // Normalizar datas para o cache (apenas data, sem hora)
+      let startDate: string | null = null
+      let endDate: string | null = null
+      if (filters.dateRange) {
+        const start = new Date(filters.dateRange.start)
+        const end = new Date(filters.dateRange.end)
+        start.setHours(0, 0, 0, 0)
+        end.setHours(23, 59, 59, 999)
+        startDate = start.toISOString().split('T')[0]
+        endDate = end.toISOString().split('T')[0]
+      } else if (dateRange) {
+        // Fallback para dateRange direto (compatibilidade)
+        const start = new Date(dateRange.start)
+        const end = new Date(dateRange.end)
+        start.setHours(0, 0, 0, 0)
+        end.setHours(23, 59, 59, 999)
+        startDate = start.toISOString().split('T')[0]
+        endDate = end.toISOString().split('T')[0]
+      }
+
+      // Criar payload de cache baseado na combinação de filtros
+      // Cada combinação única de filtros gera uma chave única
+      const cachePayload = {
+        funnelType,
+        useOrcamentos,
+        startDate,
+        endDate,
+        nucleo: filters.nucleo || null,
+        loja: filters.loja || null,
+        vendedor: filters.vendedor || null,
+        arquiteto: filters.arquiteto || null,
+        status: filters.status || null, // Status de orçamento (Em Aprovação, Enviado, etc.)
+      }
+
+      const cacheHash = hashString(JSON.stringify(cachePayload))
+      cacheKey = `funnel_cache_${cacheHash}`
+      timestampKey = `${cacheKey}_timestamp`
+
+      // Tentar usar resultado final em cache (válido por 30 minutos)
+      const cachedData = localStorage.getItem(cacheKey)
+      const cachedTimestamp = localStorage.getItem(timestampKey)
+      if (cachedData && cachedTimestamp) {
+        const timestamp = parseInt(cachedTimestamp, 10)
+        const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+        if (ageInMinutes < 30) {
+          try {
+            const parsed = JSON.parse(cachedData)
+
+            const periodLabel =
+              filters?.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+
+            // Cache HIT: resultado já existe, não precisa recalcular
+            console.log(
+              `[CACHE HIT] funnel_cache HIT key=${cacheKey} periodo=${periodLabel} status=${cachePayload.status ?? 'Todos'} nucleo=${
+                cachePayload.nucleo ?? 'Todos'
+              } loja=${cachePayload.loja ?? 'Todas'} vendedor=${cachePayload.vendedor ?? 'Todos'} arquiteto=${
+                cachePayload.arquiteto ?? 'Todos'
+              } funnelType=${funnelType} useOrcamentos=${useOrcamentos}`,
+            )
+            console.log('[ETAPA 3] (CACHE) Orçamentos e projetos já calculados anteriormente para esta combinação de filtros')
+            console.log('[ETAPA 4] (CACHE) Métricas do funil carregadas diretamente do cache (sem recálculo)')
+            console.log('[ETAPA 5] (CACHE) Cache ainda válido - nenhum novo SAVE necessário')
+            return parsed
+          } catch {
+            // Se der erro ao parsear, seguimos fluxo normal e recalculamos
+          }
+        }
+      }
+    } catch {
+      // Qualquer erro aqui não deve quebrar o cálculo; apenas ignora o cache
+      cacheKey = null
+      timestampKey = null
+    }
+  }
+
   const createdCount = projects.length
   
+  // ETAPA 3: Buscar os orçamentos destes projetos
   // Coletar todos os IDs de orçamentos dos projetos
   const orcamentoIdsSet = new Set<string>()
   projects.forEach(project => {
@@ -1709,6 +1945,8 @@ export async function calculateFunnelMetrics(
       project.new_orcamentos.forEach(id => orcamentoIdsSet.add(id))
     }
   })
+  
+  console.log(`[ETAPA 3] Buscando orçamentos dos projetos, total_projetos=${createdCount} total_orcamento_ids=${orcamentoIdsSet.size}`)
   
   // Buscar orçamentos conforme a página
   const orcamentosMap = new Map<string, Orcamento>()
@@ -1738,7 +1976,7 @@ export async function calculateFunnelMetrics(
       const batchSize = 50
       
       // Log: quantos orçamentos serão buscados
-      console.log(`orcamento buscando total_orcamento_ids=${orcamentoIdsArray.length} total_lotes=${Math.ceil(orcamentoIdsArray.length / batchSize)}`)
+      // console.log(`orcamento buscando total_orcamento_ids=${orcamentoIdsArray.length} total_lotes=${Math.ceil(orcamentoIdsArray.length / batchSize)}`)
       
       for (let i = 0; i < orcamentoIdsArray.length; i += batchSize) {
         const batch = orcamentoIdsArray.slice(i, i + batchSize)
@@ -1746,7 +1984,7 @@ export async function calculateFunnelMetrics(
         const totalLotes = Math.ceil(orcamentoIdsArray.length / batchSize)
         
         // Log: início de cada lote
-        console.log(`orcamento lote ${loteNum}/${totalLotes} buscando ${batch.length} IDs`)
+        // console.log(`orcamento lote ${loteNum}/${totalLotes} buscando ${batch.length} IDs`)
         
         const constraints = [
           {
@@ -1771,7 +2009,7 @@ export async function calculateFunnelMetrics(
           const results = data.response?.results || []
           
           // Log: resultado de cada lote
-          console.log(`orcamento lote ${loteNum}/${totalLotes} retornou ${results.length} orcamentos`)
+          // console.log(`orcamento lote ${loteNum}/${totalLotes} retornou ${results.length} orcamentos`)
           
           results.forEach(orcamento => {
             if (orcamento.removido !== true) {
@@ -1781,11 +2019,11 @@ export async function calculateFunnelMetrics(
         }
       }
       
-      // Log: total de orçamentos encontrados
-      console.log(`orcamento total_encontrados=${orcamentosMap.size}`)
+      console.log(`[ETAPA 3] Orçamentos encontrados: ${orcamentosMap.size} de ${orcamentoIdsSet.size} IDs buscados`)
     }
   }
   
+  // ETAPA 4: Calcular métricas do funil (contagens e percentuais)
   // Status que contam como "Enviado ao cliente"
   const sentStatuses = [
     'Enviado ao cliente',
@@ -1803,7 +2041,7 @@ export async function calculateFunnelMetrics(
   projects.forEach((project, projectIndex) => {
     if (!project.new_orcamentos || project.new_orcamentos.length === 0) {
       // Log: projeto sem orçamentos
-      console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=0`)
+      // console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=0`)
       return
     }
     
@@ -1854,8 +2092,8 @@ export async function calculateFunnelMetrics(
     })
     
     // Log: projeto com seus orçamentos (ID e status)
-    const orcamentosLog = orcamentosInfo.map(o => `{id=${o.id} status="${o.status}"}`).join(' ')
-    console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=${project.new_orcamentos.length} orcamentos=[${orcamentosLog}]`)
+    // const orcamentosLog = orcamentosInfo.map(o => `{id=${o.id} status="${o.status}"}`).join(' ')
+    // console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=${project.new_orcamentos.length} orcamentos=[${orcamentosLog}]`)
     
     // Contar por projeto (não por orçamento)
     if (hasSent) {
@@ -1889,10 +2127,7 @@ export async function calculateFunnelMetrics(
     ? ((rejectedCount / sentCount) * 100).toFixed(1) 
     : '0'
   
-  // Log final: resumo de todos os dados processados
-  console.log(`funnel_metrics processado total_projetos=${createdCount} projetos_enviados=${sentCount} em_aprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount} total_orcamentos=${orcamentosMap.size}`)
-  
-  return {
+  const result = {
     created: { 
       count: createdCount, 
       label: 'Projetos Criados', 
@@ -1924,5 +2159,32 @@ export async function calculateFunnelMetrics(
       sublabel: 'dos enviados' 
     },
   }
+
+  // ETAPA 4: Resumo das métricas calculadas
+  console.log(`[ETAPA 4] funnel_metrics processado total_projetos=${createdCount} projetos_enviados=${sentCount} em_aprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount} total_orcamentos=${orcamentosMap.size}`)
+
+  // Salvar resultado final do funil em cache (quando possível)
+  if (typeof window !== 'undefined' && cacheKey && timestampKey) {
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(result))
+      localStorage.setItem(timestampKey, Date.now().toString())
+
+      const periodLabel =
+        filters?.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
+
+      // ETAPA 5: Salvar resultado final no cache
+      console.log(
+        `[ETAPA 5] funnel_cache SAVE key=${cacheKey} periodo=${periodLabel} status=${filters?.status ?? 'Todos'} nucleo=${
+          filters?.nucleo ?? 'Todos'
+        } loja=${filters?.loja ?? 'Todas'} vendedor=${filters?.vendedor ?? 'Todos'} arquiteto=${
+          filters?.arquiteto ?? 'Todos'
+        } createdCount=${createdCount} sentCount=${sentCount} emAprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount}`,
+      )
+    } catch {
+      // Ignorar erros ao salvar cache do funil
+    }
+  }
+
+  return result
 }
 

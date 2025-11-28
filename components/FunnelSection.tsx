@@ -97,7 +97,13 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
   }, [projects])
 
   // Buscar todos os projetos até a data final para o Funil Aberto
+  // AGORA: só busca quando o usuário realmente seleciona o Funil Aberto
   useEffect(() => {
+    // Só buscar se o usuário estiver no Funil Aberto
+    if (funnelType !== 'open') {
+      return
+    }
+
     const loadAllProjectsUntilEndDate = async () => {
       try {
         // Buscar todos os projetos até a data final (sem limite de data inicial)
@@ -121,10 +127,9 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
       }
     }
 
-    // Buscar sempre para ter os dados prontos quando o usuário alternar para Funil Aberto
     loadAllProjectsUntilEndDate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentEndDate, filters.nucleo, filters.loja, filters.vendedor, filters.arquiteto])
+  }, [funnelType, currentEndDate, filters.nucleo, filters.loja, filters.vendedor, filters.arquiteto])
 
   const openFunnelProjects = useMemo(() => {
     // Funil Aberto: todos os projetos criados até a data final do filtro (acumulado)
@@ -170,7 +175,8 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
       try {
         setLoading(true)
         // Página Status de Projetos: não buscar orçamentos com filtro de data, apenas pelos IDs dos projetos
-        const metrics = await calculateFunnelMetrics(currentProjects, funnelType, comparePrevious, filters.dateRange, false)
+        // Passar filtros completos para gerar chave de cache baseada na combinação de filtros
+        const metrics = await calculateFunnelMetrics(currentProjects, funnelType, comparePrevious, filters.dateRange, false, filters)
         setFunnelData(metrics)
         // Não buscamos mais dados de comparação de mês anterior via API
         setPreviousFunnelData(null)

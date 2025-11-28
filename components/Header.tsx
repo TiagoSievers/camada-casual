@@ -16,11 +16,14 @@ interface HeaderProps {
   filterOptions: FilterOptions
   onFiltersChange: (filters: DashboardFilters) => void
   activeTab?: TabType
+  onLoadLojas?: () => Promise<void>
+  onLoadVendedores?: () => Promise<void>
+  onLoadArquitetos?: () => Promise<void>
 }
 
 type DateRangePreset = 'last7days' | 'thisMonth' | 'thisQuarter' | 'thisYear' | 'custom'
 
-export default function Header({ filters, filterOptions, onFiltersChange, activeTab = 'status' }: HeaderProps) {
+export default function Header({ filters, filterOptions, onFiltersChange, activeTab = 'status', onLoadLojas, onLoadVendedores, onLoadArquitetos }: HeaderProps) {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
   const [startDate, setStartDate] = useState<Date>(new Date(filters.dateRange.start))
   const [endDate, setEndDate] = useState<Date>(new Date(filters.dateRange.end))
@@ -456,6 +459,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
             className="filter-button"
             value={filters.loja || ''}
             onChange={(e) => handleLojaChange(e.target.value || null)}
+            onFocus={() => onLoadLojas?.()}
           >
             <option value="">Todas Lojas</option>
             {filterOptions.lojas.map(loja => (
@@ -481,6 +485,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
                 className="filter-button"
                 value={filters.vendedor || ''}
                 onChange={(e) => handleVendedorChange(e.target.value || null)}
+                onFocus={() => onLoadVendedores?.()}
               >
                 <option value="">Todos Vendedores</option>
                 {filterOptions.vendedores.map(vendedor => (
@@ -491,6 +496,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
                 className="filter-button"
                 value={filters.arquiteto || ''}
                 onChange={(e) => handleArquitetoChange(e.target.value || null)}
+                onFocus={() => onLoadArquitetos?.()}
               >
                 <option value="">Todos Arquitetos</option>
                 {filterOptions.arquitetos.map(arquiteto => (
@@ -504,4 +510,3 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
     </header>
   )
 }
-

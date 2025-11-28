@@ -9,7 +9,7 @@ interface PerformanceComercialSectionProps {
 }
 
 export default function PerformanceComercialSection({ filters }: PerformanceComercialSectionProps) {
-  const { vendedores, arquitetos, loading, error, refreshVendedores, refreshArquitetos } = usePerformanceData(filters)
+  const { vendedores, arquitetos, loading, error } = usePerformanceData(filters)
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -120,16 +120,6 @@ export default function PerformanceComercialSection({ filters }: PerformanceCome
               </svg>
             </div>
             <h3 className="performance-block-title">Performance Vendedores</h3>
-            <button
-              onClick={refreshVendedores}
-              disabled={loading}
-              className="performance-refresh-button"
-              title="Atualizar lista de vendedores"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-              </svg>
-            </button>
           </div>
           <div className="performance-list">
             {vendedores.length === 0 ? (
@@ -163,16 +153,6 @@ export default function PerformanceComercialSection({ filters }: PerformanceCome
               </svg>
             </div>
             <h3 className="performance-block-title">Performance Arquitetos</h3>
-            <button
-              onClick={refreshArquitetos}
-              disabled={loading}
-              className="performance-refresh-button"
-              title="Atualizar lista de arquitetos"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-              </svg>
-            </button>
           </div>
           <div className="performance-list">
             {arquitetos.length === 0 ? (
