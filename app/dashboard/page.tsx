@@ -45,10 +45,11 @@ export default function DashboardPage() {
   }
  
   // Buscar projetos com filtros (chamada ÚNICA de projetos)
-  const { projects: allProjects, filteredProjects, loading: projectsLoading, error } = useProjects(filters)
+  // NOVA ABORDAGEM: Agora também retorna orçamentos já buscados
+  const { projects: allProjects, filteredProjects, orcamentos, loading: projectsLoading, error } = useProjects(filters)
 
-  // Buscar opções de filtros usando os projetos já carregados
-  const { options: filterOptions, loading: optionsLoading, loadLojas, loadVendedores, loadArquitetos } = useFilterOptions(allProjects)
+  // Buscar opções de filtros (núcleos são carregados automaticamente de TODOS os orçamentos)
+  const { options: filterOptions, loading: optionsLoading, loadLojas, loadVendedores, loadArquitetos } = useFilterOptions()
 
   const renderContent = () => {
     if (error) {
@@ -74,6 +75,7 @@ export default function DashboardPage() {
             <FunnelSection 
               projects={filteredProjects} 
               allProjects={allProjects}
+              orcamentos={orcamentos}
               filters={filters}
             />
             <ChartsSection projects={allProjects} />

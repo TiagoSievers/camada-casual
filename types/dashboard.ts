@@ -7,12 +7,12 @@
 // TIPOS BASE
 // ============================================
 
-export type ProjectStatus = 'Ativo' | 'Pausado' | 'Inativo'
+export type ProjectStatus = 'Ativo' | 'Pausado' | 'Inativo' | 'Perdido' | 'Ganho'
 export type Nucleo = 'Interiores' | 'Exteriores' | 'Conceito' | 'Projetos'
 export type FunnelType = 'open' | 'closed'
 export type MetricType = 'created' | 'sent' | 'approved'
 export type StatusType = 'inApproval' | 'approved' | 'rejected'
-export type OrcamentoStatusFilter = 'Em Aprovação' | 'Enviado' | 'Aprovado' | 'Reprovado'
+export type OrcamentoStatusFilter = 'Em Aprovação' | 'Enviado' | 'Aprovado' | 'Reprovado' | 'Liberado para pedido'
 
 // ============================================
 // ESTRUTURA DO PROJETO (JSON)
@@ -141,6 +141,7 @@ export interface FunnelMetrics {
   inApproval: MetricData
   approved: MetricData
   rejected: MetricData
+  released: MetricData // Liberado para pedido
 }
 
 export interface FunnelData extends FunnelMetrics {

@@ -581,6 +581,11 @@
   border: 2px solid oklch(0.885 0.062 18.334);
 }
 
+.status-card.blue {
+  background: linear-gradient(to right, var(--color-blue-50), #dbeafe);
+  border: 2px solid oklch(0.882 0.059 254.128);
+}
+
 .status-card-left {
   display: block;
   width: auto;
@@ -620,6 +625,10 @@
   color: oklch(0.505 0.213 27.518);
 }
 
+.status-card.blue .status-card-label {
+  color: oklch(0.446 0.03 256.802);
+}
+
 .status-card-number {
   display: block;
   width: auto;
@@ -644,6 +653,10 @@
 
 .status-card.red .status-card-number {
   color: oklch(0.577 0.245 27.325);
+}
+
+.status-card.blue .status-card-number {
+  color: rgb(59, 130, 246);
 }
 
 .status-card-right {
@@ -685,6 +698,10 @@
   color: oklch(0.505 0.213 27.518);
 }
 
+.status-card.blue .status-card-percentage {
+  color: oklch(0.446 0.03 256.802);
+}
+
 .status-card-sublabel {
   display: block;
   width: auto;
@@ -708,6 +725,10 @@
 
 .status-card.red .status-card-sublabel {
   color: oklch(0.577 0.245 27.325);
+}
+
+.status-card.blue .status-card-sublabel {
+  color: rgb(59, 130, 246);
 }
 
 @media (max-width: 768px) {

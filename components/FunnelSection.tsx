@@ -3,29 +3,33 @@
 import { useState, useEffect, useMemo } from 'react'
 import './FunnelSection.css'
 import type { Project, DashboardFilters } from '@/types/dashboard'
-import { calculateFunnelMetrics, fetchProjects } from '@/lib/api'
+import { calculateFunnelMetrics, fetchProjects, fetchAllOrcamentos } from '@/lib/api'
+
+import type { Orcamento } from '@/lib/api'
 
 interface FunnelSectionProps {
   /** Projetos filtrados pelo período (usado no Funil Fechado) */
   projects?: Project[]
   /** Todos os projetos sem filtro de data (usado para Funil Aberto e mês anterior) */
   allProjects?: Project[]
+  /** Orçamentos já buscados (NOVO) */
+  orcamentos?: Orcamento[]
   /** Filtros atuais, usados aqui para data (período/mês) */
   filters: DashboardFilters
 }
 
-export default function FunnelSection({ projects = [], allProjects = [], filters }: FunnelSectionProps) {
+export default function FunnelSection({ projects = [], allProjects = [], orcamentos = [], filters }: FunnelSectionProps) {
   const [funnelType, setFunnelType] = useState<'closed' | 'open'>('closed')
   const [comparePrevious, setComparePrevious] = useState(false)
   const [funnelData, setFunnelData] = useState({
     created: { 
       count: 0, 
-      label: 'Projetos Criados', 
-      sublabel: 'projetos' 
+      label: 'Total de Orçamentos', 
+      sublabel: 'orçamentos' 
     },
     sent: { 
       count: 0, 
-      label: 'Projetos Enviados', 
+      label: 'Orçamentos Enviados', 
       sublabel: 'ao cliente', 
       percentage: '0%', 
       labelPercentage: 'Taxa envio' 
@@ -48,10 +52,18 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
       label: 'Reprovados', 
       sublabel: 'dos enviados' 
     },
+    released: { 
+      count: 0, 
+      percentage: '0%', 
+      label: 'Liberado para pedido', 
+      sublabel: 'dos enviados' 
+    },
   })
   const [previousFunnelData, setPreviousFunnelData] = useState<typeof funnelData | null>(null)
   const [loading, setLoading] = useState(true)
   const [allProjectsUntilEndDate, setAllProjectsUntilEndDate] = useState<Project[]>([])
+  // NOVO: Orçamentos para Funil Aberto (desde a data mais antiga até hoje)
+  const [openFunnelOrcamentos, setOpenFunnelOrcamentos] = useState<Orcamento[]>([])
 
   // Helpers de datas
   const currentStartDate = useMemo(() => new Date(filters.dateRange.start), [filters.dateRange.start])
@@ -131,6 +143,44 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [funnelType, currentEndDate, filters.nucleo, filters.loja, filters.vendedor, filters.arquiteto])
 
+  // NOVO: Buscar orçamentos desde a data mais antiga até hoje para o Funil Aberto
+  useEffect(() => {
+    // Só buscar se o usuário estiver no Funil Aberto
+    if (funnelType !== 'open') {
+      setOpenFunnelOrcamentos([])
+      return
+    }
+
+    const loadOpenFunnelOrcamentos = async () => {
+      try {
+        console.log(`[FUNIL ABERTO] Buscando orçamentos desde a data mais antiga até hoje...`)
+        
+        // Data mais antiga encontrada: 2025-09-18
+        const oldestDate = new Date('2025-09-18T00:00:00.000Z')
+        
+        // Data de hoje (fim do dia)
+        const today = new Date()
+        today.setHours(23, 59, 59, 999)
+        
+        const allOrcamentos = await fetchAllOrcamentos({
+          dateRange: {
+            start: oldestDate,
+            end: today,
+          },
+          removido: false,
+        })
+        
+        console.log(`[FUNIL ABERTO] Orçamentos encontrados: ${allOrcamentos.length} (desde ${oldestDate.toLocaleDateString('pt-BR')} até ${today.toLocaleDateString('pt-BR')})`)
+        setOpenFunnelOrcamentos(allOrcamentos)
+      } catch (error) {
+        console.error('Erro ao buscar orçamentos para Funil Aberto:', error)
+        setOpenFunnelOrcamentos([])
+      }
+    }
+
+    loadOpenFunnelOrcamentos()
+  }, [funnelType])
+
   const openFunnelProjects = useMemo(() => {
     // Funil Aberto: todos os projetos criados até a data final do filtro (acumulado)
     // Usar allProjectsUntilEndDate que contém todos os projetos até a data final
@@ -161,11 +211,12 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
 
       if (currentProjects.length === 0) {
         setFunnelData({
-          created: { count: 0, label: 'Projetos Criados', sublabel: 'projetos' },
-          sent: { count: 0, label: 'Projetos Enviados', sublabel: 'ao cliente', percentage: '0%', labelPercentage: 'Taxa envio' },
+          created: { count: 0, label: 'Total de Orçamentos', sublabel: 'orçamentos' },
+          sent: { count: 0, label: 'Orçamentos Enviados', sublabel: 'ao cliente', percentage: '0%', labelPercentage: 'Taxa envio' },
           inApproval: { count: 0, percentage: '0%', label: 'Em Aprovação', sublabel: 'dos enviados' },
           approved: { count: 0, percentage: '0%', label: 'Aprovados', sublabel: 'dos enviados' },
           rejected: { count: 0, percentage: '0%', label: 'Reprovados', sublabel: 'dos enviados' },
+          released: { count: 0, percentage: '0%', label: 'Liberado para pedido', sublabel: 'dos enviados' },
         })
         setPreviousFunnelData(null)
         setLoading(false)
@@ -174,9 +225,14 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
 
       try {
         setLoading(true)
+        // Para Funil Aberto: usar orçamentos desde a data mais antiga até hoje
+        // Para Funil Fechado: usar orçamentos do período do date picker
+        const orcamentosToUse = funnelType === 'open' ? openFunnelOrcamentos : orcamentos
+        
         // Página Status de Projetos: não buscar orçamentos com filtro de data, apenas pelos IDs dos projetos
         // Passar filtros completos para gerar chave de cache baseada na combinação de filtros
-        const metrics = await calculateFunnelMetrics(currentProjects, funnelType, comparePrevious, filters.dateRange, false, filters)
+        // Passar orçamentos já buscados para evitar busca duplicada
+        const metrics = await calculateFunnelMetrics(currentProjects, funnelType, comparePrevious, filters.dateRange, false, filters, orcamentosToUse)
         setFunnelData(metrics)
         // Não buscamos mais dados de comparação de mês anterior via API
         setPreviousFunnelData(null)
@@ -191,11 +247,12 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
           : '0'
         
         setFunnelData({
-          created: { count: createdCount, label: 'Projetos Criados', sublabel: 'projetos' },
-          sent: { count: sentCount, label: 'Projetos Enviados', sublabel: 'ao cliente', percentage: `${sentPercentage}%`, labelPercentage: 'Taxa envio' },
+          created: { count: 0, label: 'Total de Orçamentos', sublabel: 'orçamentos' },
+          sent: { count: sentCount, label: 'Orçamentos Enviados', sublabel: 'ao cliente', percentage: `${sentPercentage}%`, labelPercentage: 'Taxa envio' },
           inApproval: { count: 0, percentage: '0%', label: 'Em Aprovação', sublabel: 'dos enviados' },
           approved: { count: 0, percentage: '0%', label: 'Aprovados', sublabel: 'dos enviados' },
           rejected: { count: 0, percentage: '0%', label: 'Reprovados', sublabel: 'dos enviados' },
+          released: { count: 0, percentage: '0%', label: 'Liberado para pedido', sublabel: 'dos enviados' },
         })
         setPreviousFunnelData(null)
       } finally {
@@ -316,7 +373,7 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
       
         <div className="funnel-content">
           <div className="funnel-main-row">
-            {/* Projetos Criados */}
+            {/* Total de Orçamentos */}
             <div className="funnel-card large orange" style={{ width: '280px' }}>
               <p className="funnel-card-prefix">1. {funnelData.created.label}</p>
               <p className="funnel-card-number">{funnelData.created.count}</p>
@@ -335,7 +392,7 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
             </div>
           </div>
 
-          {/* Projetos Enviados */}
+          {/* Orçamentos Enviados */}
           <div className="funnel-card large blue" style={{ width: '280px' }}>
             <p className="funnel-card-prefix">2. {funnelData.sent.label}</p>
             <p className="funnel-card-number blue-number">{funnelData.sent.count}</p>
@@ -382,6 +439,17 @@ export default function FunnelSection({ projects = [], allProjects = [], filters
               <div className="status-card-right">
                 <p className="status-card-percentage">{funnelData.rejected.percentage}</p>
                 <p className="status-card-sublabel">{funnelData.rejected.sublabel}</p>
+              </div>
+            </div>
+
+            <div className="funnel-card status-card blue">
+              <div className="status-card-left">
+                <p className="status-card-label">d) {funnelData.released.label}</p>
+                <p className="status-card-number">{funnelData.released.count}</p>
+              </div>
+              <div className="status-card-right">
+                <p className="status-card-percentage">{funnelData.released.percentage}</p>
+                <p className="status-card-sublabel">{funnelData.released.sublabel}</p>
               </div>
             </div>
           </div>

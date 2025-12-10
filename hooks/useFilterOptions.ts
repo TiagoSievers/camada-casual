@@ -1,15 +1,16 @@
 /**
  * Hook para montar opções de filtros (núcleos, lojas, vendedores, arquitetos)
  * usando:
- * - projetos já carregados (para núcleos)
+ * - API de orçamentos e projetos (para núcleos - busca TODOS os núcleos disponíveis)
  * - APIs específicas (lojas, vendedores, arquitetos)
  *
- * Importante: este hook NÃO chama mais a API de projetos.
+ * Núcleos são carregados automaticamente na montagem do componente.
+ * Lojas, vendedores e arquitetos são carregados sob demanda (quando o dropdown é focado).
  */
 
 import { useState, useEffect } from 'react'
-import { fetchLojas, fetchVendedores, fetchArquitetos } from '@/lib/api'
-import type { Project, FilterOptions, Nucleo } from '@/types/dashboard'
+import { fetchLojas, fetchVendedores, fetchArquitetos, fetchAllNucleos } from '@/lib/api'
+import type { FilterOptions } from '@/types/dashboard'
 
 interface UseFilterOptionsReturn {
   options: FilterOptions
@@ -20,7 +21,7 @@ interface UseFilterOptionsReturn {
   loadArquitetos: () => Promise<void>
 }
 
-export function useFilterOptions(projects: Project[]): UseFilterOptionsReturn {
+export function useFilterOptions(): UseFilterOptionsReturn {
   const [options, setOptions] = useState<FilterOptions>({
     nucleos: [],
     lojas: [],
@@ -32,25 +33,39 @@ export function useFilterOptions(projects: Project[]): UseFilterOptionsReturn {
   const [lojasLoaded, setLojasLoaded] = useState(false)
   const [vendedoresLoaded, setVendedoresLoaded] = useState(false)
   const [arquitetosLoaded, setArquitetosLoaded] = useState(false)
+  const [nucleosLoaded, setNucleosLoaded] = useState(false)
 
-  // Carregar apenas núcleos automaticamente (vem dos projetos)
+  // Carregar todos os núcleos disponíveis (independente dos filtros)
   useEffect(() => {
-    const nucleosSet = new Set<Nucleo>()
-    projects.forEach(project => {
-      if (project.nucleo_lista) {
-        project.nucleo_lista.forEach(nucleo => nucleosSet.add(nucleo))
-      }
-    })
-    const nucleos = Array.from(nucleosSet).map(id => ({
-      id,
-      name: id,
-    }))
+    const loadNucleos = async () => {
+      if (nucleosLoaded) return // Já carregado
 
-    setOptions(prev => ({
-      ...prev,
-      nucleos,
-    }))
-  }, [projects])
+      try {
+        setLoading(true)
+        console.log(`[FILTROS] Carregando todos os núcleos disponíveis...`)
+        const nucleosData = await fetchAllNucleos(false) // false = use cache if available
+        const nucleos = nucleosData.map(id => ({
+          id,
+          name: id,
+        }))
+
+        setOptions(prev => ({
+          ...prev,
+          nucleos,
+        }))
+        setNucleosLoaded(true)
+        console.log(`[FILTROS] Núcleos carregados: ${nucleos.length}`)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Erro ao carregar núcleos')
+        console.error('Erro ao carregar núcleos:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadNucleos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Executar apenas uma vez na montagem
 
   // Função para carregar lojas sob demanda
   const loadLojas = async () => {

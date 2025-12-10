@@ -3,7 +3,7 @@
  * Endpoint base: https://crm.casualmoveis.com.br/version-live/api/1.1/obj/projeto
  */
 
-import type { Project, ProjectsResponse, DashboardFilters, FunnelType, OrcamentoStatusFilter } from '@/types/dashboard'
+import type { Project, ProjectsResponse, DashboardFilters, FunnelType, OrcamentoStatusFilter, Nucleo } from '@/types/dashboard'
 
 const API_BASE_URL = 'https://crm.casualmoveis.com.br/api/1.1'
 
@@ -150,8 +150,11 @@ if (typeof window !== 'undefined') {
 export interface Orcamento {
   _id: string
   status?: string
+  projeto?: string // ID do projeto relacionado
+  loja?: string // ID da loja (pode vir do orçamento ou do projeto)
   'Created Date'?: string
   'Modified Date'?: string
+  removido?: boolean
   [key: string]: any
 }
 
@@ -309,24 +312,20 @@ export function hashString(str: string): string {
  * Gera chave de cache baseada em todos os filtros
  * Para projetos: inclui período, núcleo, loja, vendedor, arquiteto (status é aplicado depois na ETAPA 2)
  * Para orçamentos: inclui período, status, removido
+ * Para orcamentos_e_projetos: inclui todos os filtros (data, status, núcleo, loja, vendedor, arquiteto)
  * Suporta períodos customizados do calendário
  */
 function getCacheKeyForFilters(
   filters: Partial<DashboardFilters> | undefined,
-  dataType: 'projetos' | 'orcamentos'
+  dataType: 'projetos' | 'orcamentos' | 'orcamentos_e_projetos'
 ): string | null {
   if (!filters) {
     // Sem filtros, usar período padrão
     return `casual_crm_${dataType}_cache_${hashString('ultimos_7_dias')}`
   }
 
-  // Verificar se é período customizado ou pré-definido
-  const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) : 'Últimos 7 dias'
-  
   // Criar objeto com todos os filtros para gerar hash
-  // IMPORTANTE: Para projetos, incluímos todos os filtros que afetam a busca da API
-  // (núcleo, loja, vendedor, arquiteto são aplicados no frontend, mas incluímos na chave
-  // para garantir cache correto quando os mesmos filtros são aplicados)
+  // Sempre usar datas customizadas (não há mais períodos pré-definidos)
   const filterKey: any = {
     nucleo: filters.nucleo || null,
     loja: filters.loja || null,
@@ -334,14 +333,14 @@ function getCacheKeyForFilters(
     arquiteto: filters.arquiteto || null,
   }
 
-  // Para orçamentos, incluir status e removido
-  if (dataType === 'orcamentos') {
+  // Para orçamentos e orcamentos_e_projetos, incluir status
+  if (dataType === 'orcamentos' || dataType === 'orcamentos_e_projetos') {
     filterKey.status = filters.status || null
   }
   // Para projetos, NÃO incluímos status aqui porque ele é aplicado depois na ETAPA 2
 
-  // Se for período customizado, usar as datas exatas
-  if (!periodLabel && filters.dateRange) {
+  // Sempre usar as datas exatas (período customizado)
+  if (filters.dateRange) {
     const start = new Date(filters.dateRange.start)
     const end = new Date(filters.dateRange.end)
     // Normalizar datas para garantir consistência (apenas data, sem hora)
@@ -352,15 +351,25 @@ function getCacheKeyForFilters(
       end: end.toISOString().split('T')[0],
     }
   } else {
-    // Período pré-definido
-    filterKey.periodo = periodLabel || 'Últimos 7 dias'
+    // Fallback: se não houver dateRange, usar últimos 7 dias
+    const end = new Date()
+    end.setHours(23, 59, 59, 999)
+    const start = new Date()
+    start.setDate(start.getDate() - 7)
+    start.setHours(0, 0, 0, 0)
+    filterKey.periodo_customizado = {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    }
   }
 
   // Gerar hash da combinação de filtros
   const filterString = JSON.stringify(filterKey)
   const hash = hashString(filterString)
 
-  return `casual_crm_${dataType}_cache_${hash}`
+  // Para orcamentos_e_projetos, usar prefixo específico
+  const cachePrefix = dataType === 'orcamentos_e_projetos' ? 'orcamentos_e_projetos' : dataType
+  return `casual_crm_${cachePrefix}_cache_${hash}`
 }
 
 /**
@@ -378,29 +387,21 @@ function getCacheKeyForOrcamentosFilters(filters?: {
     return null
   }
 
-  // Verificar se é período customizado ou pré-definido
-  const periodLabel = getDropdownPeriodLabelFromRange(filters.dateRange)
-  
   // Criar objeto com todos os filtros para gerar hash
   const filterKey: any = {
     status: filters.status ? filters.status.sort().join(',') : null, // Ordenar para garantir consistência
     removido: filters.removido !== undefined ? filters.removido : null,
   }
 
-  // Se for período customizado, usar as datas exatas
-  if (!periodLabel) {
-    const start = new Date(filters.dateRange.start)
-    const end = new Date(filters.dateRange.end)
-    // Normalizar datas para garantir consistência (apenas data, sem hora)
-    start.setHours(0, 0, 0, 0)
-    end.setHours(23, 59, 59, 999)
-    filterKey.periodo_customizado = {
-      start: start.toISOString().split('T')[0], // Apenas a data (YYYY-MM-DD)
-      end: end.toISOString().split('T')[0],
-    }
-  } else {
-    // Período pré-definido
-    filterKey.periodo = periodLabel
+  // Sempre usar as datas exatas (período customizado)
+  const start = new Date(filters.dateRange.start)
+  const end = new Date(filters.dateRange.end)
+  // Normalizar datas para garantir consistência (apenas data, sem hora)
+  start.setHours(0, 0, 0, 0)
+  end.setHours(23, 59, 59, 999)
+  filterKey.periodo_customizado = {
+    start: start.toISOString().split('T')[0], // Apenas a data (YYYY-MM-DD)
+    end: end.toISOString().split('T')[0],
   }
 
   // Gerar hash da combinação de filtros
@@ -411,12 +412,193 @@ function getCacheKeyForOrcamentosFilters(filters?: {
 }
 
 /**
+ * NOVA ABORDAGEM: Busca orçamentos primeiro, depois projetos relacionados
+ * 
+ * Fluxo:
+ * 1. Busca orçamentos com filtros de data e status
+ * 2. Coleta IDs únicos de projetos dos orçamentos
+ * 3. Busca projetos por IDs
+ * 4. Filtra projetos por núcleo, loja, vendedor, arquiteto
+ * 5. Filtra orçamentos para manter apenas os que pertencem aos projetos filtrados
+ */
+export async function fetchOrcamentosAndProjects(filters?: Partial<DashboardFilters>): Promise<{
+  orcamentos: Orcamento[]
+  projects: Project[]
+}> {
+  // Gerar chave de cache baseada em todos os filtros
+  const cacheKey = getCacheKeyForFilters(filters, 'orcamentos_e_projetos')
+  const timestampKey = cacheKey ? `${cacheKey}_timestamp` : null
+
+  try {
+    // Verificar cache primeiro
+    if (cacheKey && timestampKey && typeof window !== 'undefined') {
+      try {
+        const cachedData = localStorage.getItem(cacheKey)
+        const cachedTimestamp = localStorage.getItem(timestampKey)
+        
+        if (cachedData && cachedTimestamp) {
+          const cached = JSON.parse(cachedData) as { orcamentos: Orcamento[]; projects: Project[] }
+          const timestamp = parseInt(cachedTimestamp, 10)
+          const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+          
+          if (ageInMinutes < 30) {
+            console.log(`[ETAPA 1] (CACHE) orcamentos e projetos carregados do cache: ${cached.orcamentos.length} orcamentos, ${cached.projects.length} projetos key=${cacheKey} age=${ageInMinutes.toFixed(1)}min`)
+            return cached
+          } else {
+            console.log(`[ETAPA 1] Cache expirado (${ageInMinutes.toFixed(1)}min > 30min) - buscando da API key=${cacheKey}`)
+          }
+        } else {
+          console.log(`[ETAPA 1] Cache não encontrado - buscando da API key=${cacheKey}`)
+        }
+      } catch (error) {
+        console.log(`[ETAPA 1] Erro ao ler cache - buscando da API key=${cacheKey} error=${error}`)
+      }
+    }
+
+    // ETAPA 1: Buscar orçamentos com filtros de data e status
+    console.log(`[ETAPA 1] Buscando orçamentos da API com filtros...`)
+    
+    const orcamentosFilters: {
+      dateRange?: { start: Date | string; end: Date | string }
+      status?: string[]
+      removido?: boolean
+    } = {
+      removido: false,
+    }
+
+    if (filters?.dateRange) {
+      orcamentosFilters.dateRange = filters.dateRange
+    }
+
+    // Converter filtro de status para array se existir
+    if (filters?.status) {
+      const statusMap: Record<OrcamentoStatusFilter, string[]> = {
+        'Em Aprovação': ['em aprovação', 'aprovação', 'pendente aprovação'],
+        'Enviado': ['enviado'],
+        'Aprovado': ['aprovado pelo cliente', 'aprovado (master)'],
+        'Reprovado': ['reprovado'],
+        'Liberado para pedido': ['liberado para pedido', 'liberado'],
+      }
+      orcamentosFilters.status = statusMap[filters.status] || []
+    }
+
+    const allOrcamentos = await fetchAllOrcamentos(orcamentosFilters)
+    console.log(`[ETAPA 1] Orçamentos encontrados: ${allOrcamentos.length}`)
+
+    // ETAPA 2: Coletar IDs únicos de projetos dos orçamentos
+    const projetoIdsSet = new Set<string>()
+    allOrcamentos.forEach(orcamento => {
+      if (orcamento.projeto) {
+        projetoIdsSet.add(orcamento.projeto)
+      }
+    })
+    console.log(`[ETAPA 2] IDs únicos de projetos coletados: ${projetoIdsSet.size}`)
+
+    // ETAPA 3: Buscar projetos por IDs
+    const projetoIdsArray = Array.from(projetoIdsSet)
+    const projectsMap = new Map<string, Project>()
+    
+    if (projetoIdsArray.length > 0) {
+      const batchSize = 50
+      
+      for (let i = 0; i < projetoIdsArray.length; i += batchSize) {
+        const batch = projetoIdsArray.slice(i, i + batchSize)
+        
+        const constraints = [
+          {
+            key: '_id',
+            constraint_type: 'in',
+            value: batch,
+          },
+        ]
+
+        const url = new URL(`${API_BASE_URL}/obj/projeto`)
+        url.searchParams.set('constraints', JSON.stringify(constraints))
+
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (response.ok) {
+          const data: ProjectsResponse = await response.json()
+          const results = data.response?.results || []
+          
+          results.forEach(project => {
+            projectsMap.set(project._id, project)
+          })
+        }
+      }
+    }
+    console.log(`[ETAPA 3] Projetos encontrados: ${projectsMap.size}`)
+
+    // ETAPA 4: Filtrar projetos por núcleo, loja, vendedor, arquiteto
+    let filteredProjects = Array.from(projectsMap.values())
+
+    if (filters?.nucleo) {
+      filteredProjects = filteredProjects.filter(p => 
+        p.nucleo_lista && p.nucleo_lista.includes(filters.nucleo!)
+      )
+    }
+
+    if (filters?.loja) {
+      filteredProjects = filteredProjects.filter(p => p.loja === filters.loja)
+    }
+
+    if (filters?.vendedor) {
+      filteredProjects = filteredProjects.filter(p => {
+        const vendedorIds = extractVendedorIds(p)
+        return vendedorIds.includes(filters.vendedor!)
+      })
+    }
+
+    if (filters?.arquiteto) {
+      filteredProjects = filteredProjects.filter(p => p.arquiteto === filters.arquiteto)
+    }
+
+    const filteredProjetoIds = new Set(filteredProjects.map(p => p._id))
+    console.log(`[ETAPA 4] Projetos após filtros: ${filteredProjects.length}`)
+
+    // ETAPA 5: Filtrar orçamentos para manter apenas os que pertencem aos projetos filtrados
+    const filteredOrcamentos = allOrcamentos.filter(orc => 
+      orc.projeto && filteredProjetoIds.has(orc.projeto)
+    )
+    console.log(`[ETAPA 5] Orçamentos filtrados: ${filteredOrcamentos.length}`)
+
+    const result = {
+      orcamentos: filteredOrcamentos,
+      projects: filteredProjects,
+    }
+
+    // Salvar no cache
+    if (cacheKey && timestampKey && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(result))
+        localStorage.setItem(timestampKey, Date.now().toString())
+        console.log(`[ETAPA 1] Cache salvo key=${cacheKey} orcamentos=${filteredOrcamentos.length} projetos=${filteredProjects.length}`)
+      } catch (error) {
+        console.log(`[ETAPA 1] Erro ao salvar cache key=${cacheKey} error=${error}`)
+      }
+    }
+
+    return result
+  } catch (error) {
+    console.error('Erro ao buscar orçamentos e projetos:', error)
+    throw error
+  }
+}
+
+/**
  * Busca projetos da API aplicando o filtro de data via URL (sem filtro no front).
  *
  * Regra (Status de Projeto):
  * - Apenas uma chamada para `/obj/projeto`
  * - Filtro feito por `Created Date` usando `constraints` (greater than / less than)
  * - Cache no localStorage para períodos pré-definidos e customizados
+ * 
+ * @deprecated Use fetchOrcamentosAndProjects instead
  */
 export async function fetchProjects(filters?: Partial<DashboardFilters>): Promise<Project[]> {
   // Verificar se deve usar cache (declarar antes do try para estar disponível no catch)
@@ -908,54 +1090,13 @@ export async function fetchOrcamentosFromProjects(projects: Project[]): Promise<
 /**
  * Busca todos os orçamentos da API com filtros opcionais
  */
+/**
+ * @deprecated Não há mais períodos pré-definidos, sempre retorna null
+ * Mantida apenas para compatibilidade com código existente
+ */
 export function getDropdownPeriodLabelFromRange(range?: { start: Date | string; end: Date | string }): string | null {
-  if (!range) return 'Últimos 7 dias'
-
-  const start = new Date(range.start)
-  const end = new Date(range.end)
-  const now = new Date()
-
-  const normalizeDate = (date: Date) => {
-    const d = new Date(date)
-    d.setHours(0, 0, 0, 0)
-    return d.getTime()
-  }
-
-  const startTime = normalizeDate(start)
-  const endTime = normalizeDate(end)
-  const nowTime = normalizeDate(now)
-
-  // Últimos 7 dias
-  const last7Days = new Date()
-  last7Days.setDate(last7Days.getDate() - 7)
-  const last7DaysTime = normalizeDate(last7Days)
-  if (startTime === last7DaysTime && endTime >= nowTime - 86400000) {
-    return 'Últimos 7 dias'
-  }
-
-  // Este Mês
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const thisMonthStartTime = normalizeDate(thisMonthStart)
-  if (startTime === thisMonthStartTime && endTime >= nowTime - 86400000) {
-    return 'Este Mês'
-  }
-
-  // Este Trimestre
-  const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
-  const thisQuarterStart = new Date(now.getFullYear(), quarterStartMonth, 1)
-  const thisQuarterStartTime = normalizeDate(thisQuarterStart)
-  if (startTime === thisQuarterStartTime && endTime >= nowTime - 86400000) {
-    return 'Este Trimestre'
-  }
-
-  // Este Ano
-  const thisYearStart = new Date(now.getFullYear(), 0, 1)
-  const thisYearStartTime = normalizeDate(thisYearStart)
-  if (startTime === thisYearStartTime && endTime >= nowTime - 86400000) {
-    return 'Este Ano'
-  }
-
-  // Se não casar com nenhum preset do dropdown, não rotulamos
+  // Sempre retorna null pois não há mais períodos pré-definidos
+  // Todos os períodos são customizados via calendário
   return null
 }
 
@@ -967,7 +1108,6 @@ export async function fetchAllOrcamentos(filters?: {
   // Verificar se deve usar cache (declarar antes do try para estar disponível no catch)
   const cacheKey = getCacheKeyForOrcamentosFilters(filters)
   const timestampKey = cacheKey ? `${cacheKey}_timestamp` : null
-  const periodLabel = filters?.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) : null
 
   try {
     if (API_DISABLED) {
@@ -1031,6 +1171,7 @@ export async function fetchAllOrcamentos(filters?: {
 
       // Quando vier dateRange (caso da Margem & Rentabilidade),
       // aplicamos o filtro direto na API usando Created Date.
+      let constraints: any[] = []
       if (filters?.dateRange) {
         const start = new Date(filters.dateRange.start)
         const end = new Date(filters.dateRange.end)
@@ -1043,7 +1184,7 @@ export async function fetchAllOrcamentos(filters?: {
         endExclusive.setDate(endExclusive.getDate() + 1)
         endExclusive.setHours(0, 0, 0, 0)
 
-        const constraints = [
+        constraints = [
           {
             key: 'Created Date',
             constraint_type: 'greater than',
@@ -1057,23 +1198,16 @@ export async function fetchAllOrcamentos(filters?: {
         ]
 
         url.searchParams.set('constraints', JSON.stringify(constraints))
-
-        // Logs simples para inspeção:
-        // 1) período aplicado
-        // if (periodLabel) {
-        //   console.log(
-        //     `orcamento dateRange periodo="${periodLabel}" start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
-        //   )
-        // } else {
-        //   console.log(
-        //     `orcamento dateRange start=${start.toISOString()} end=${end.toISOString()} (exclusiveEnd=${endExclusive.toISOString()})`,
-        //   )
-        // }
-        // 2) curl da chamada (apenas na primeira página)
-        // if (pageNumber === 1) {
-        //   console.log(`curl -X GET '${url.toString()}' -H 'Content-Type: application/json'`)
-        // }
       }
+
+      // LOG: Chamada API de orçamento
+      console.log(`[ORÇAMENTO API] Página ${pageNumber} - Chamada:`, {
+        url: url.toString(),
+        method: 'GET',
+        constraints: constraints.length > 0 ? constraints : 'nenhum',
+        cursor: cursor || 0,
+        limit: 100,
+      })
     
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -1088,15 +1222,32 @@ export async function fetchAllOrcamentos(filters?: {
     
     const data: OrcamentosResponse = await response.json()
 
-      // Log simples do resumo retornado pela API (count / remaining) - apenas na primeira página
-      if (pageNumber === 1 && data && data.response) {
-        console.log(
-          `orcamento api result { "count": ${data.response.count ?? 0}, "remaining": ${data.response.remaining ?? 0} }`,
-        )
-      }
-
+      // LOG: Resposta da API
       const results = data.response.results || []
       const remaining = data.response.remaining ?? 0
+      const count = data.response.count ?? 0
+
+      console.log(`[ORÇAMENTO API] Página ${pageNumber} - Resposta:`, {
+        count: count,
+        remaining: remaining,
+        results_returned: results.length,
+        cursor: data.response.cursor,
+      })
+
+      // LOG: Lista de orçamentos retornados
+      if (results.length > 0) {
+        console.log(`[ORÇAMENTO API] Página ${pageNumber} - Lista de orçamentos (${results.length} itens):`, 
+          results.map(orc => ({
+            _id: orc._id,
+            projeto: orc.projeto || 'sem projeto',
+            status: orc.status || 'sem status',
+            'Created Date': orc['Created Date'] || 'sem data',
+            removido: orc.removido || false,
+          }))
+        )
+      } else {
+        console.log(`[ORÇAMENTO API] Página ${pageNumber} - Nenhum orçamento retornado`)
+      }
 
       allOrcamentos.push(...results)
 
@@ -1238,9 +1389,62 @@ export async function fetchItemOrcamentosByIds(itemIds: string[]): Promise<ItemO
 }
 
 /**
+ * Busca itens de orçamento por IDs de orçamentos (não por IDs de itens)
+ * Endpoint: /obj/item_orcamento
+ * Usa constraint: orcamento in [IDs dos orçamentos]
+ * @param orcamentoIds - Array de IDs dos orçamentos
+ */
+export async function fetchItemOrcamentosByOrcamentoIds(orcamentoIds: string[]): Promise<ItemOrcamento[]> {
+  if (API_DISABLED || orcamentoIds.length === 0) {
+    return []
+  }
+
+  try {
+    const allItems: ItemOrcamento[] = []
+    const batchSize = 50
+    
+    for (let i = 0; i < orcamentoIds.length; i += batchSize) {
+      const batch = orcamentoIds.slice(i, i + batchSize)
+      
+      const constraints = [
+        {
+          key: 'orcamento', // Buscar pelo campo 'orcamento' que é o ID do orçamento relacionado
+          constraint_type: 'in',
+          value: batch,
+        },
+      ]
+
+      const url = new URL(`${API_BASE_URL}/obj/item_orcamento`)
+      url.searchParams.set('constraints', JSON.stringify(constraints))
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        // console.error(`Erro ao buscar itens de orçamento (lote ${Math.floor(i / batchSize) + 1}):`, response.statusText)
+        continue
+      }
+
+      const data = await response.json()
+      const results = data.response?.results || []
+      allItems.push(...results)
+    }
+
+    return allItems
+  } catch (error) {
+    // console.error('Erro ao buscar itens de orçamento:', error)
+    return []
+  }
+}
+
+/**
  * Busca todos os itens de orçamento da API com paginação
  * Endpoint: /obj/item_orcamento
- * @deprecated Use fetchItemOrcamentosByIds instead
+ * @deprecated Use fetchItemOrcamentosByIds or fetchItemOrcamentosByOrcamentoIds instead
  */
 export async function fetchAllItemOrcamentos(): Promise<ItemOrcamento[]> {
   // API de itens de orçamento desabilitada; retornar lista vazia
@@ -1676,6 +1880,142 @@ export async function fetchLojas(forceRefresh: boolean = false): Promise<Loja[]>
 }
 
 /**
+ * Busca todos os núcleos únicos disponíveis nos orçamentos
+ * Cache válido por 24 horas (núcleos não mudam com frequência)
+ */
+export async function fetchAllNucleos(forceRefresh: boolean = false): Promise<Nucleo[]> {
+  const STORAGE_KEY = 'casual_crm_nucleos_cache'
+  const TIMESTAMP_KEY = 'casual_crm_nucleos_cache_timestamp'
+  
+  // Verificar cache se não for forçado a atualizar
+  if (!forceRefresh && typeof window !== 'undefined') {
+    try {
+      const cachedData = localStorage.getItem(STORAGE_KEY)
+      const cachedTimestamp = localStorage.getItem(TIMESTAMP_KEY)
+      
+      if (cachedData && cachedTimestamp) {
+        const nucleos = JSON.parse(cachedData) as Nucleo[]
+        const timestamp = parseInt(cachedTimestamp, 10)
+        const ageInHours = (Date.now() - timestamp) / (1000 * 60 * 60)
+        
+        // Cache válido por 24 horas
+        if (ageInHours < 24) {
+          console.log(`[FILTROS] Núcleos carregados do cache: ${nucleos.length}`)
+          return nucleos
+        }
+      }
+    } catch (error) {
+      // Ignorar erros de leitura de cache
+    }
+  }
+  
+  try {
+    if (API_DISABLED) {
+      logApiDisabled('/obj/orcamento + /obj/projeto')
+      return []
+    }
+
+    console.log(`[FILTROS] Buscando todos os núcleos únicos...`)
+
+    // 1. Buscar todos os orçamentos (sem filtro de data, apenas não removidos)
+    const allOrcamentos = await fetchAllOrcamentos({ removido: false })
+    
+    // 2. Extrair IDs dos projetos únicos
+    const projectIds = Array.from(
+      new Set(
+        allOrcamentos
+          .map(orc => orc.projeto)
+          .filter((id): id is string => !!id && id.trim() !== '')
+      )
+    )
+
+    console.log(`[FILTROS] Encontrados ${projectIds.length} projetos únicos`)
+
+    if (projectIds.length === 0) {
+      return []
+    }
+
+    // 3. Buscar os projetos relacionados
+    const allProjects: Project[] = []
+    const batchSize = 100
+
+    for (let i = 0; i < projectIds.length; i += batchSize) {
+      const batch = projectIds.slice(i, i + batchSize)
+      
+      const url = new URL(`${API_BASE_URL}/obj/projeto`)
+      const constraints = [
+        {
+          key: '_id',
+          constraint_type: 'in',
+          value: batch,
+        },
+      ]
+      
+      url.searchParams.set('constraints', JSON.stringify(constraints))
+      url.searchParams.set('limit', '100')
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        console.error(`Erro ao buscar projetos (lote ${Math.floor(i / batchSize) + 1}):`, response.statusText)
+        continue
+      }
+
+      const data: ProjectsResponse = await response.json()
+      const results = data.response?.results || []
+      allProjects.push(...results)
+    }
+
+    // 4. Extrair todos os núcleos únicos
+    const nucleosSet = new Set<Nucleo>()
+    allProjects.forEach(project => {
+      if (project.nucleo_lista && Array.isArray(project.nucleo_lista)) {
+        project.nucleo_lista.forEach(nucleo => {
+          nucleosSet.add(nucleo)
+        })
+      }
+    })
+
+    const nucleos = Array.from(nucleosSet).sort()
+
+    console.log(`[FILTROS] Núcleos únicos encontrados: ${nucleos.length}`, nucleos)
+
+    // 5. Salvar no cache
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nucleos))
+        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString())
+      } catch (error) {
+        // Ignorar erros ao salvar cache
+      }
+    }
+
+    return nucleos
+  } catch (error) {
+    console.error('Erro ao buscar núcleos:', error)
+    
+    // Em caso de erro, tentar usar cache se disponível
+    if (typeof window !== 'undefined' && !forceRefresh) {
+      try {
+        const cachedData = localStorage.getItem(STORAGE_KEY)
+        if (cachedData) {
+          return JSON.parse(cachedData) as Nucleo[]
+        }
+      } catch {
+        // Ignorar erro ao ler cache
+      }
+    }
+    
+    throw error
+  }
+}
+
+/**
  * Interface para métricas de margem
  */
 export interface MarginMetrics {
@@ -1843,6 +2183,9 @@ export function calculateMarginMetrics(
 
 /**
  * Calcula métricas do funil baseado nos projetos e orçamentos
+ * 
+ * NOVA ABORDAGEM: Se orcamentos forem fornecidos, usa eles diretamente (já foram buscados em fetchOrcamentosAndProjects)
+ * Se não, busca orçamentos dos projetos (compatibilidade com código antigo)
  */
 export async function calculateFunnelMetrics(
   projects: Project[],
@@ -1850,7 +2193,8 @@ export async function calculateFunnelMetrics(
   comparePrevious?: boolean,
   dateRange?: { start: Date | string; end: Date | string },
   useOrcamentos: boolean = false, // Novo parâmetro: se false, não busca orçamentos (Status de Projetos)
-  filters?: Partial<DashboardFilters> // Filtros completos para gerar chave de cache baseada na combinação
+  filters?: Partial<DashboardFilters>, // Filtros completos para gerar chave de cache baseada na combinação
+  orcamentos?: Orcamento[] // NOVO: Orçamentos já buscados (opcional, para evitar busca duplicada)
 ) {
   // Gerar chave de cache baseada na combinação de filtros
   // Assim conseguimos reutilizar diretamente o resultado final do funil,
@@ -1935,23 +2279,30 @@ export async function calculateFunnelMetrics(
     }
   }
 
-  const createdCount = projects.length
-  
-  // ETAPA 3: Buscar os orçamentos destes projetos
-  // Coletar todos os IDs de orçamentos dos projetos
-  const orcamentoIdsSet = new Set<string>()
-  projects.forEach(project => {
-    if (project.new_orcamentos) {
-      project.new_orcamentos.forEach(id => orcamentoIdsSet.add(id))
-    }
-  })
-  
-  console.log(`[ETAPA 3] Buscando orçamentos dos projetos, total_projetos=${createdCount} total_orcamento_ids=${orcamentoIdsSet.size}`)
-  
-  // Buscar orçamentos conforme a página
+  // ETAPA 3: Usar orçamentos fornecidos ou buscar se necessário
   const orcamentosMap = new Map<string, Orcamento>()
   
-  if (orcamentoIdsSet.size > 0) {
+  if (orcamentos && orcamentos.length > 0) {
+    // NOVA ABORDAGEM: Orçamentos já foram buscados em fetchOrcamentosAndProjects
+    console.log(`[ETAPA 3] (CACHE) Usando orçamentos já buscados: ${orcamentos.length} orçamentos`)
+    orcamentos.forEach(orcamento => {
+      if (orcamento.removido !== true) {
+        orcamentosMap.set(orcamento._id, orcamento)
+      }
+    })
+  } else {
+    // ABORDAGEM ANTIGA: Buscar orçamentos dos projetos (compatibilidade)
+    console.log(`[ETAPA 3] Buscando orçamentos dos projetos, total_projetos=${projects.length}`)
+    
+    // Coletar todos os IDs de orçamentos dos projetos
+    const orcamentoIdsSet = new Set<string>()
+    projects.forEach(project => {
+      if (project.new_orcamentos) {
+        project.new_orcamentos.forEach(id => orcamentoIdsSet.add(id))
+      }
+    })
+    
+    if (orcamentoIdsSet.size > 0) {
     if (useOrcamentos) {
       // Página Margem & Rentabilidade: buscar orçamentos com filtro de data
       const allOrcamentos = await fetchAllOrcamentos(
@@ -2021,6 +2372,7 @@ export async function calculateFunnelMetrics(
       
       console.log(`[ETAPA 3] Orçamentos encontrados: ${orcamentosMap.size} de ${orcamentoIdsSet.size} IDs buscados`)
     }
+    }
   }
   
   // ETAPA 4: Calcular métricas do funil (contagens e percentuais)
@@ -2032,87 +2384,62 @@ export async function calculateFunnelMetrics(
     'Liberado para pedido',
   ]
   
-  // Contar projetos com orçamentos enviados
+  // NOVA LÓGICA: Contar ORÇAMENTOS diretamente (não projetos)
   let sentCount = 0
   let inApprovalCount = 0
   let approvedCount = 0
   let rejectedCount = 0
+  let releasedCount = 0 // Liberado para pedido
   
-  projects.forEach((project, projectIndex) => {
-    if (!project.new_orcamentos || project.new_orcamentos.length === 0) {
-      // Log: projeto sem orçamentos
-      // console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=0`)
-      return
+  // Iterar sobre todos os orçamentos no mapa
+  orcamentosMap.forEach((orcamento, orcamentoId) => {
+    if (!orcamento.status) {
+      return // Orçamento sem status, ignorar
     }
     
-    // Coletar informações dos orçamentos deste projeto para o log
-    const orcamentosInfo: Array<{ id: string; status: string }> = []
+    const status = String(orcamento.status)
+    const statusLower = status.toLowerCase().trim()
     
-    // Verificar status dos orçamentos deste projeto
-    let hasSent = false
-    let hasInApproval = false
-    let hasApproved = false
-    let hasRejected = false
+    // Verificar se foi enviado (qualquer status que indique envio)
+    const isSent = sentStatuses.some(s => statusLower.includes(s.toLowerCase())) ||
+                  statusLower.includes('enviado') ||
+                  statusLower.includes('aprovado') ||
+                  statusLower.includes('reprovado') ||
+                  statusLower.includes('liberado')
     
-    project.new_orcamentos.forEach(orcamentoId => {
-      const orcamento = orcamentosMap.get(orcamentoId)
-      if (orcamento) {
-        const status = orcamento.status ? String(orcamento.status) : 'sem status'
-        orcamentosInfo.push({ id: orcamentoId, status })
-        
-        if (orcamento.status) {
-          const statusLower = status.toLowerCase().trim()
-        
-        // Verificar se foi enviado (qualquer status que indique envio)
-          const isSent = sentStatuses.some(s => statusLower.includes(s.toLowerCase())) ||
-                        statusLower.includes('enviado') ||
-                        statusLower.includes('aprovado') ||
-                        statusLower.includes('reprovado') ||
-                        statusLower.includes('liberado')
-        
-        if (isSent) {
-          hasSent = true
-        }
-        
-        // Verificar status específicos (mais específicos primeiro)
-          if (statusLower.includes('reprovado')) {
-          hasRejected = true
-          } else if (statusLower.includes('aprovado pelo cliente') || 
-                     statusLower.includes('aprovado') && !statusLower.includes('reprovado')) {
-          hasApproved = true
-          } else if (statusLower.includes('em aprovação') || 
-                     (statusLower.includes('aprovação') && !statusLower.includes('aprovado') && !statusLower.includes('reprovado'))) {
-          hasInApproval = true
-        }
-        }
-      } else {
-        // Orçamento não encontrado no mapa (pode ter sido removido ou não existe)
-        orcamentosInfo.push({ id: orcamentoId, status: 'não encontrado' })
-      }
-    })
-    
-    // Log: projeto com seus orçamentos (ID e status)
-    // const orcamentosLog = orcamentosInfo.map(o => `{id=${o.id} status="${o.status}"}`).join(' ')
-    // console.log(`projeto[${projectIndex}] id=${project._id} titulo="${project.titulo}" total_orcamentos=${project.new_orcamentos.length} orcamentos=[${orcamentosLog}]`)
-    
-    // Contar por projeto (não por orçamento)
-    if (hasSent) {
-      sentCount++
+    if (!isSent) {
+      return // Orçamento não enviado, ignorar
     }
-    if (hasInApproval) {
-      inApprovalCount++
-    }
-    if (hasApproved) {
-      approvedCount++
-    }
-    if (hasRejected) {
+    
+    // Contar orçamento como enviado
+    sentCount++
+    
+    // Verificar status específicos (mais específicos primeiro)
+    if (statusLower.includes('liberado para pedido') || statusLower.includes('liberado')) {
+      releasedCount++
+    } else if (statusLower.includes('reprovado')) {
       rejectedCount++
+    } else if (statusLower.includes('aprovado pelo cliente') || 
+               (statusLower.includes('aprovado') && !statusLower.includes('reprovado') && !statusLower.includes('liberado'))) {
+      approvedCount++
+    } else if (statusLower.includes('em aprovação') || 
+               statusLower.includes('pendente aprovação') ||
+               (statusLower.includes('aprovação') && !statusLower.includes('aprovado') && !statusLower.includes('reprovado') && !statusLower.includes('liberado'))) {
+      inApprovalCount++
     }
   })
   
-  // Calcular percentuais
-  const sentPercentage = createdCount > 0 
-    ? ((sentCount / createdCount) * 100).toFixed(1) 
+  // "Orçamentos Enviados" = soma de todos os orçamentos enviados (em aprovação + aprovados + reprovados + liberados)
+  // Agora sentCount já é a soma correta, mas vamos garantir
+  const totalEnviados = inApprovalCount + approvedCount + rejectedCount + releasedCount
+  sentCount = totalEnviados
+  
+  // Contar total de orçamentos únicos (não removidos)
+  const totalOrcamentos = orcamentosMap.size
+  
+  // Calcular percentuais (taxa de envio = orçamentos enviados / total de orçamentos)
+  const sentPercentage = totalOrcamentos > 0 
+    ? ((sentCount / totalOrcamentos) * 100).toFixed(1) 
     : '0'
   
   const inApprovalPercentage = sentCount > 0 
@@ -2127,15 +2454,19 @@ export async function calculateFunnelMetrics(
     ? ((rejectedCount / sentCount) * 100).toFixed(1) 
     : '0'
   
+  const releasedPercentage = sentCount > 0 
+    ? ((releasedCount / sentCount) * 100).toFixed(1) 
+    : '0'
+  
   const result = {
     created: { 
-      count: createdCount, 
-      label: 'Projetos Criados', 
-      sublabel: 'projetos' 
+      count: totalOrcamentos, 
+      label: 'Total de Orçamentos', 
+      sublabel: 'orçamentos' 
     },
     sent: { 
       count: sentCount, 
-      label: 'Projetos Enviados', 
+      label: 'Orçamentos Enviados', 
       sublabel: 'ao cliente', 
       percentage: `${sentPercentage}%`, 
       labelPercentage: 'Taxa envio' 
@@ -2158,10 +2489,16 @@ export async function calculateFunnelMetrics(
       label: 'Reprovados', 
       sublabel: 'dos enviados' 
     },
+    released: { 
+      count: releasedCount, 
+      percentage: `${releasedPercentage}%`, 
+      label: 'Liberado para pedido', 
+      sublabel: 'dos enviados' 
+    },
   }
 
   // ETAPA 4: Resumo das métricas calculadas
-  console.log(`[ETAPA 4] funnel_metrics processado total_projetos=${createdCount} projetos_enviados=${sentCount} em_aprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount} total_orcamentos=${orcamentosMap.size}`)
+  console.log(`[ETAPA 4] funnel_metrics processado total_orcamentos=${totalOrcamentos} projetos_enviados=${sentCount} em_aprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount} liberados=${releasedCount}`)
 
   // Salvar resultado final do funil em cache (quando possível)
   if (typeof window !== 'undefined' && cacheKey && timestampKey) {
@@ -2178,7 +2515,7 @@ export async function calculateFunnelMetrics(
           filters?.nucleo ?? 'Todos'
         } loja=${filters?.loja ?? 'Todas'} vendedor=${filters?.vendedor ?? 'Todos'} arquiteto=${
           filters?.arquiteto ?? 'Todos'
-        } createdCount=${createdCount} sentCount=${sentCount} emAprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount}`,
+        } totalOrcamentos=${totalOrcamentos} sentCount=${sentCount} emAprovacao=${inApprovalCount} aprovados=${approvedCount} reprovados=${rejectedCount} liberados=${releasedCount}`,
       )
     } catch {
       // Ignorar erros ao salvar cache do funil

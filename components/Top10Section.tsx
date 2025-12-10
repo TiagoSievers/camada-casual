@@ -93,15 +93,21 @@ export default function Top10Section({ filters }: Top10SectionProps) {
             {produtos.length === 0 ? (
               <div className="top10-empty">Nenhum produto encontrado</div>
             ) : (
-              produtos.map((produto, index) => (
-                <div key={produto.id} className="top10-item">
-                  <div className="top10-rank-number">{index + 1}º</div>
-                  <InitialAvatar name={produto.name} />
-                  <div className="top10-item-content">
-                    <div className="top10-item-name">{produto.name}</div>
+              produtos.map((produto, index) => {
+                const maxValue = produtos[0]?.value || 1
+                const percentage = maxValue > 0 ? ((produto.value / maxValue) * 100).toFixed(1) : '0'
+                return (
+                  <div key={produto.id} className="top10-item top10-item-product">
+                    <div className="top10-rank-number">{index + 1}º</div>
+                    <InitialAvatar name={produto.name} />
+                    <div className="top10-item-content">
+                      <div className="top10-item-name">{produto.name}</div>
+                      <div className="top10-item-value">{formatCurrency(produto.value)}</div>
+                    </div>
+                    <div className="top10-item-percentage">{percentage}%</div>
                   </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </div>

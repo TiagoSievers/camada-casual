@@ -3,21 +3,22 @@
 import { useState, useEffect, useMemo, memo } from 'react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts'
 import './ChartsSection.css'
-import type { Project, ProjectStatus } from '@/types/dashboard'
-import { fetchAllOrcamentos, fetchOrcamentosFromProjects } from '@/lib/api'
+import type { Project, ProjectStatus, OrcamentoStatusFilter } from '@/types/dashboard'
+import { fetchProjects, fetchAllOrcamentos } from '@/lib/api'
 import type { Orcamento } from '@/lib/api'
 
 interface ChartsSectionProps {
-  projects?: Project[]
+  projects?: Project[] // Mantido para compatibilidade, mas não será usado para o gráfico de evolução diária
 }
 
 type MetricType = 'created' | 'sent' | 'approved'
 type PeriodType = '7days' | '30days' | '90days'
 type StatusFilterType = ProjectStatus | 'all'
+type OrcamentoStatusFilterType = OrcamentoStatusFilter | 'all'
 
 interface StatusChartProps {
   data: Array<{ date: string; value: number }>
-  statusFilter: StatusFilterType
+  statusFilter: OrcamentoStatusFilterType
 }
 
 // Componente memoizado para o gráfico de status para evitar re-renderizações desnecessárias
@@ -71,7 +72,17 @@ const StatusChart = memo(({ data, statusFilter }: StatusChartProps) => {
             marginBottom: '4px'
           }}
           formatter={(value: number) => {
-            const label = statusFilter === 'all' ? 'projetos' : statusFilter === 'Ativo' ? 'projetos ativos' : statusFilter === 'Pausado' ? 'projetos pausados' : 'projetos inativos'
+            const label = statusFilter === 'all' 
+              ? 'orçamentos' 
+              : statusFilter === 'Em Aprovação' 
+              ? 'orçamentos em aprovação' 
+              : statusFilter === 'Enviado' 
+              ? 'orçamentos enviados' 
+              : statusFilter === 'Aprovado' 
+              ? 'orçamentos aprovados'
+              : statusFilter === 'Reprovado'
+              ? 'orçamentos reprovados'
+              : 'orçamentos liberados para pedido'
             return [`${value} ${label}`, '']
           }}
           separator=""
@@ -105,12 +116,19 @@ const StatusChart = memo(({ data, statusFilter }: StatusChartProps) => {
 StatusChart.displayName = 'StatusChart'
 
 export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
-  const [metric, setMetric] = useState<MetricType>('created')
+  // NOVO: Status do projeto ao invés de métrica para o gráfico de evolução diária
+  const [statusFilterDaily, setStatusFilterDaily] = useState<StatusFilterType>('all')
   const [periodDaily, setPeriodDaily] = useState<PeriodType>('30days') // Período para o gráfico de evolução diária
   const [periodStatus, setPeriodStatus] = useState<PeriodType>('30days') // Período para o gráfico de evolução de status
-  const [statusFilter, setStatusFilter] = useState<StatusFilterType>('all')
-  const [orcamentosMap, setOrcamentosMap] = useState<Map<string, Orcamento>>(new Map())
-  const [loading, setLoading] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<OrcamentoStatusFilterType>('all')
+  
+  // NOVO: Projetos buscados diretamente do endpoint /obj/projeto para o gráfico de evolução diária
+  const [chartProjects, setChartProjects] = useState<Project[]>([])
+  const [loadingChartProjects, setLoadingChartProjects] = useState(false)
+  
+  // NOVO: Orçamentos buscados diretamente do endpoint /obj/orcamento para o gráfico de evolução de status
+  const [chartOrcamentos, setChartOrcamentos] = useState<Orcamento[]>([])
+  const [loadingChartOrcamentos, setLoadingChartOrcamentos] = useState(false)
 
   // Calcular período baseado no filtro - para o gráfico de evolução diária
   const dateRangeDaily = useMemo(() => {
@@ -133,6 +151,28 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
     return { start, end }
   }, [periodDaily])
 
+  // NOVO: Buscar projetos diretamente do endpoint /obj/projeto quando o período mudar
+  useEffect(() => {
+    const loadChartProjects = async () => {
+      setLoadingChartProjects(true)
+      try {
+        console.log(`[GRAFICO] Buscando projetos diretamente do endpoint /obj/projeto para período: ${periodDaily}`)
+        const fetchedProjects = await fetchProjects({
+          dateRange: dateRangeDaily,
+        })
+        console.log(`[GRAFICO] Projetos encontrados: ${fetchedProjects.length}`)
+        setChartProjects(fetchedProjects)
+      } catch (err) {
+        console.error('Erro ao buscar projetos para o gráfico:', err)
+        setChartProjects([])
+      } finally {
+        setLoadingChartProjects(false)
+      }
+    }
+    
+    loadChartProjects()
+  }, [periodDaily, dateRangeDaily])
+
   // Calcular período baseado no filtro - para o gráfico de evolução de status
   const dateRangeStatus = useMemo(() => {
     const end = new Date()
@@ -154,158 +194,102 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
     return { start, end }
   }, [periodStatus])
 
-  // Buscar orçamentos quando necessário (apenas para métricas de envio/aprovação)
+  // NOVO: Buscar orçamentos diretamente do endpoint /obj/orcamento quando o período mudar
   useEffect(() => {
-    const loadOrcamentos = async () => {
-      if (metric === 'sent' || metric === 'approved') {
-        setLoading(true)
-        try {
-          const orcamentos = await fetchOrcamentosFromProjects(projects)
-          setOrcamentosMap(orcamentos)
-        } catch (err) {
-          console.error('Erro ao buscar orçamentos:', err)
-        } finally {
-          setLoading(false)
-        }
+    const loadChartOrcamentos = async () => {
+      setLoadingChartOrcamentos(true)
+      try {
+        console.log(`[GRAFICO STATUS] Buscando orçamentos diretamente do endpoint /obj/orcamento para período: ${periodStatus}`)
+        const fetchedOrcamentos = await fetchAllOrcamentos({
+          dateRange: dateRangeStatus,
+          removido: false,
+        })
+        console.log(`[GRAFICO STATUS] Orçamentos encontrados: ${fetchedOrcamentos.length}`)
+        setChartOrcamentos(fetchedOrcamentos)
+      } catch (err) {
+        console.error('Erro ao buscar orçamentos para o gráfico de status:', err)
+        setChartOrcamentos([])
+      } finally {
+        setLoadingChartOrcamentos(false)
       }
     }
-    loadOrcamentos()
-  }, [projects, metric])
+    
+    loadChartOrcamentos()
+  }, [periodStatus, dateRangeStatus])
 
-  // Filtrar projetos pelo período - para o gráfico de evolução diária
+  // Removido: não precisamos mais buscar orçamentos, pois agora filtramos apenas por status do projeto
+
+  // Filtrar projetos por status e período (já filtrados pela API pelo período)
   const filteredProjectsDaily = useMemo(() => {
-    const filtered = projects.filter(project => {
-      const createdDate = new Date(project['Created Date'])
-      // Normalizar datas para comparação (apenas data, sem hora)
-      const projectDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
-      const rangeStart = new Date(dateRangeDaily.start.getFullYear(), dateRangeDaily.start.getMonth(), dateRangeDaily.start.getDate())
-      const rangeEnd = new Date(dateRangeDaily.end.getFullYear(), dateRangeDaily.end.getMonth(), dateRangeDaily.end.getDate())
-      
-      const isInRange = projectDate >= rangeStart && projectDate <= rangeEnd
-      return isInRange
-    })
+    let filtered = chartProjects
+    
+    // Filtrar por status se não for "all"
+    if (statusFilterDaily !== 'all') {
+      filtered = filtered.filter(project => project.status === statusFilterDaily)
+    }
     
     return filtered
-  }, [projects, dateRangeDaily, periodDaily])
+  }, [chartProjects, statusFilterDaily])
 
-  // Filtrar projetos pelo período - para o gráfico de evolução de status
-  const filteredProjectsStatus = useMemo(() => {
-    const filtered = projects.filter(project => {
-      const createdDate = new Date(project['Created Date'])
-      // Normalizar datas para comparação (apenas data, sem hora)
-      const projectDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
-      const rangeStart = new Date(dateRangeStatus.start.getFullYear(), dateRangeStatus.start.getMonth(), dateRangeStatus.start.getDate())
-      const rangeEnd = new Date(dateRangeStatus.end.getFullYear(), dateRangeStatus.end.getMonth(), dateRangeStatus.end.getDate())
-      
-      const isInRange = projectDate >= rangeStart && projectDate <= rangeEnd
-      return isInRange
-    })
+  // Filtrar orçamentos por status (já filtrados pela API pelo período)
+  const filteredOrcamentosStatus = useMemo(() => {
+    let filtered = chartOrcamentos
     
-    return filtered
-  }, [projects, dateRangeStatus, periodStatus])
-
-  // Calcular dados do gráfico de evolução diária
-  const dailyEvolutionData = useMemo(() => {
-    const dataByDate = new Map<string, { created: number; sent: number; approved: number; timestamp: number }>()
-
-    // Para "Projetos Criados", usar data de criação do projeto
-    if (metric === 'created') {
-      filteredProjectsDaily.forEach(project => {
-        const date = new Date(project['Created Date'])
-        const dateKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-        const timestamp = date.getTime()
-
-        if (!dataByDate.has(dateKey)) {
-          dataByDate.set(dateKey, { created: 0, sent: 0, approved: 0, timestamp })
-        }
-        dataByDate.get(dateKey)!.created++
-      })
-    } else {
-      // Para "Projetos Enviados" e "Projetos Aprovados", usar data do orçamento mas contar por projeto
-      filteredProjectsDaily.forEach(project => {
-        if (project.new_orcamentos && project.new_orcamentos.length > 0) {
-          let hasSent = false
-          let hasApproved = false
-          let sentDate: Date | null = null
-          let approvedDate: Date | null = null
-
-          project.new_orcamentos.forEach(orcamentoId => {
-            const orcamento = orcamentosMap.get(orcamentoId)
-            if (!orcamento || !orcamento.status) return
-
-            const status = String(orcamento.status).toLowerCase()
-            const orcamentoDate = orcamento['Created Date'] || orcamento['Modified Date'] || project['Created Date']
-            const date = new Date(orcamentoDate)
-
-            // Verificar se foi enviado
-            if (!hasSent && (status.includes('enviado') || status.includes('aprovado') || status.includes('reprovado') || status.includes('liberado'))) {
-              hasSent = true
-              sentDate = date
-            }
-
-            // Verificar se foi aprovado
-            if (!hasApproved && (status.includes('aprovado pelo cliente') || (status.includes('aprovado') && !status.includes('reprovado')))) {
-              hasApproved = true
-              approvedDate = date
-            }
-          })
-
-          // Adicionar à data apropriada
-          if (metric === 'sent' && hasSent && sentDate) {
-            const date = sentDate as Date
-            if (date >= dateRangeDaily.start && date <= dateRangeDaily.end) {
-              const dateKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-              const timestamp = date.getTime()
-
-              if (!dataByDate.has(dateKey)) {
-                dataByDate.set(dateKey, { created: 0, sent: 0, approved: 0, timestamp })
-              }
-              dataByDate.get(dateKey)!.sent++
-            }
-          } else if (metric === 'approved' && hasApproved && approvedDate) {
-            const date = approvedDate as Date
-            if (date >= dateRangeDaily.start && date <= dateRangeDaily.end) {
-              const dateKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-              const timestamp = date.getTime()
-
-              if (!dataByDate.has(dateKey)) {
-                dataByDate.set(dateKey, { created: 0, sent: 0, approved: 0, timestamp })
-              }
-              dataByDate.get(dateKey)!.approved++
-            }
-          }
-        }
+    // Filtrar por status se não for "all"
+    if (statusFilter !== 'all') {
+      const statusMap: Record<OrcamentoStatusFilter, string[]> = {
+        'Em Aprovação': ['em aprovação', 'aprovação', 'pendente aprovação'],
+        'Enviado': ['enviado'],
+        'Aprovado': ['aprovado pelo cliente', 'aprovado (master)'],
+        'Reprovado': ['reprovado'],
+        'Liberado para pedido': ['liberado para pedido', 'liberado'],
+      }
+      
+      const statusKeywords = statusMap[statusFilter] || []
+      
+      filtered = filtered.filter(orcamento => {
+        const status = String(orcamento.status || '').toLowerCase()
+        return statusKeywords.some(keyword => status.includes(keyword.toLowerCase()))
       })
     }
+    
+    return filtered
+  }, [chartOrcamentos, statusFilter])
+
+  // Calcular dados do gráfico de evolução diária - agora baseado em status do projeto
+  const dailyEvolutionData = useMemo(() => {
+    const dataByDate = new Map<string, { count: number; timestamp: number }>()
+
+    // Contar projetos por data de criação, agrupados por status
+    filteredProjectsDaily.forEach(project => {
+      const date = new Date(project['Created Date'])
+      const dateKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+      const timestamp = date.getTime()
+
+      if (!dataByDate.has(dateKey)) {
+        dataByDate.set(dateKey, { count: 0, timestamp })
+      }
+      dataByDate.get(dateKey)!.count++
+    })
 
     return Array.from(dataByDate.entries())
       .map(([date, data]) => ({
         date,
-        created: data.created,
-        sent: data.sent,
-        approved: data.approved,
-        value: metric === 'created' ? data.created : metric === 'sent' ? data.sent : data.approved,
+        value: data.count,
         timestamp: data.timestamp,
       }))
       .sort((a, b) => a.timestamp - b.timestamp)
       .map(({ date, value }) => ({ date, value }))
-  }, [filteredProjectsDaily, orcamentosMap, metric, dateRangeDaily])
+  }, [filteredProjectsDaily])
 
-  // Calcular dados do gráfico de evolução de status
+  // Calcular dados do gráfico de evolução de status - agora baseado em orçamentos
   const statusEvolutionData = useMemo(() => {
     const dataByDate = new Map<string, { count: number; timestamp: number }>()
 
-    // Filtrar projetos pelo status selecionado
-    let projectsByStatus = 0
-    filteredProjectsStatus.forEach(project => {
-      // Verificar se o status do projeto corresponde ao filtro selecionado
-      if (statusFilter !== 'all' && project.status !== statusFilter) {
-        return
-      }
-      projectsByStatus++
-
-      // Usar data de criação do projeto
-      const date = new Date(project['Created Date'])
+    // Contar orçamentos por data de criação, agrupados por status
+    filteredOrcamentosStatus.forEach(orcamento => {
+      // Usar data de criação do orçamento
+      const date = new Date(orcamento['Created Date'] || orcamento['Modified Date'] || new Date())
       // Normalizar para meia-noite para evitar problemas de timezone
       const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
       const dateKey = normalizedDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
@@ -318,7 +302,7 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
       dataByDate.get(dateKey)!.count++
     })
 
-    // Preencher dias sem projetos com valor 0 para manter continuidade visual
+    // Preencher dias sem orçamentos com valor 0 para manter continuidade visual
     // Mas apenas se houver dados
     if (dataByDate.size > 0) {
       const sortedEntries = Array.from(dataByDate.entries())
@@ -341,7 +325,7 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
     }
 
     return []
-  }, [filteredProjectsStatus, statusFilter])
+  }, [filteredOrcamentosStatus])
 
   const hasDataDaily = dailyEvolutionData.length > 0
   const hasDataStatus = statusEvolutionData.length > 0
@@ -355,15 +339,18 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
           </div>
           <div className="chart-filters">
             <div className="chart-filter-group">
-              <label>Métrica:</label>
+              <label>Status:</label>
               <select 
                 className="chart-filter"
-                value={metric}
-                onChange={(e) => setMetric(e.target.value as MetricType)}
+                value={statusFilterDaily}
+                onChange={(e) => setStatusFilterDaily(e.target.value as StatusFilterType)}
               >
-                <option value="created">Projetos Criados</option>
-                <option value="sent">Projetos Enviados</option>
-                <option value="approved">Projetos Aprovados</option>
+                <option value="all">Todos Status</option>
+                <option value="Ativo">Ativo</option>
+                <option value="Pausado">Pausado</option>
+                <option value="Inativo">Inativo</option>
+                <option value="Perdido">Perdido</option>
+                <option value="Ganho">Ganho</option>
               </select>
             </div>
             <div className="chart-filter-group">
@@ -381,7 +368,18 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
           </div>
         </div>
         <div className="chart-container">
-          {!hasDataDaily ? (
+          {loadingChartProjects ? (
+            <div style={{ 
+              height: '320px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              color: 'var(--color-gray-500)',
+              fontSize: '14px'
+            }}>
+              Carregando dados...
+            </div>
+          ) : !hasDataDaily ? (
             <div style={{ 
               height: '320px', 
               display: 'flex', 
@@ -422,8 +420,18 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
                   marginBottom: '4px'
                 }}
                 formatter={(value: number) => {
-                  const label = metric === 'created' ? 'projetos criados' : metric === 'sent' ? 'projetos enviados' : 'projetos aprovados'
-                  return [`${value} ${label}`, '']
+                  const statusLabel = statusFilterDaily === 'all' 
+                    ? 'projetos' 
+                    : statusFilterDaily === 'Ativo' 
+                    ? 'projetos ativos' 
+                    : statusFilterDaily === 'Pausado' 
+                    ? 'projetos pausados' 
+                    : statusFilterDaily === 'Inativo' 
+                    ? 'projetos inativos'
+                    : statusFilterDaily === 'Perdido'
+                    ? 'projetos perdidos'
+                    : 'projetos ganhos'
+                  return [`${value} ${statusLabel}`, '']
                 }}
                 separator=""
               />
@@ -444,12 +452,14 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
               <select 
                 className="chart-filter"
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as StatusFilterType)}
+                onChange={(e) => setStatusFilter(e.target.value as OrcamentoStatusFilterType)}
               >
                 <option value="all">Todos Status</option>
-                <option value="Ativo">Ativo</option>
-                <option value="Pausado">Pausado</option>
-                <option value="Inativo">Inativo</option>
+                <option value="Em Aprovação">Em Aprovação</option>
+                <option value="Enviado">Enviado</option>
+                <option value="Aprovado">Aprovado</option>
+                <option value="Reprovado">Reprovado</option>
+                <option value="Liberado para pedido">Liberado para pedido</option>
               </select>
             </div>
             <div className="chart-filter-group">
@@ -467,7 +477,31 @@ export default function ChartsSection({ projects = [] }: ChartsSectionProps) {
           </div>
         </div>
         <div className="chart-container">
-          <StatusChart data={statusEvolutionData} statusFilter={statusFilter} />
+          {loadingChartOrcamentos ? (
+            <div style={{ 
+              height: '320px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              color: 'var(--color-gray-500)',
+              fontSize: '14px'
+            }}>
+              Carregando dados...
+            </div>
+          ) : !hasDataStatus ? (
+            <div style={{ 
+              height: '320px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              color: 'var(--color-gray-500)',
+              fontSize: '14px'
+            }}>
+              Nenhum dado disponível para o período selecionado
+            </div>
+          ) : (
+            <StatusChart data={statusEvolutionData} statusFilter={statusFilter} />
+          )}
         </div>
       </div>
     </div>

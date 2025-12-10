@@ -159,3 +159,5 @@ Renderizar na tela
 3. **CACHE HIT:** Se a combinação de filtros já foi calculada antes (< 30 min), pula direto para ETAPA 5 (leitura do cache)
 4. **Múltiplas Execuções:** O `useEffect` em `FunnelSection` pode disparar múltiplas vezes devido a mudanças nas dependências (`closedFunnelProjects`, `openFunnelProjects`, `previousMonthClosedProjects`)
 
+
+

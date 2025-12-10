@@ -82,28 +82,28 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
 
           // Verificar cache do resultado final (válido por 30 minutos)
           if (useCache) {
-            const cachedResult = localStorage.getItem(cacheKey)
+        const cachedResult = localStorage.getItem(cacheKey)
             const cachedTimestamp = localStorage.getItem(timestampKey)
-            
-            if (cachedResult && cachedTimestamp) {
-              const timestamp = parseInt(cachedTimestamp, 10)
-              const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
-              
+        
+        if (cachedResult && cachedTimestamp) {
+          const timestamp = parseInt(cachedTimestamp, 10)
+          const ageInMinutes = (Date.now() - timestamp) / (1000 * 60)
+          
               if (ageInMinutes < 30) {
                 try {
-                  const cached = JSON.parse(cachedResult)
+            const cached = JSON.parse(cachedResult)
                   const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
                   console.log(
                     `[CACHE HIT] performance_cache HIT key=${cacheKey} periodo=${periodLabel} nucleo=${filters.nucleo ?? 'Todos'} loja=${filters.loja ?? 'Todas'} vendedor=${filters.vendedor ?? 'Todos'} arquiteto=${filters.arquiteto ?? 'Todos'}`,
                   )
                   console.log(`[CACHE HIT] Resultado encontrado em cache - ETAPAS 1-5 foram puladas (não precisa recalcular)`)
-                  setVendedores(cached.vendedores || [])
-                  setArquitetos(cached.arquitetos || [])
-                  setLoading(false)
-                  return
+            setVendedores(cached.vendedores || [])
+            setArquitetos(cached.arquitetos || [])
+            setLoading(false)
+            return
                 } catch {
                   // Erro ao parsear cache, seguir fluxo normal
-                }
+        }
               } else {
                 const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
                 console.log(
@@ -353,11 +353,11 @@ export function usePerformanceData(filters: DashboardFilters): UsePerformanceDat
       // ETAPA 8: Salvar resultado final no cache
       if (typeof window !== 'undefined' && cacheKey && timestampKey) {
         try {
-          const cacheData = {
-            vendedores: vendedoresData,
-            arquitetos: arquitetosData,
-          }
-          localStorage.setItem(cacheKey, JSON.stringify(cacheData))
+        const cacheData = {
+          vendedores: vendedoresData,
+          arquitetos: arquitetosData,
+        }
+        localStorage.setItem(cacheKey, JSON.stringify(cacheData))
           localStorage.setItem(timestampKey, Date.now().toString())
           const periodLabel = filters.dateRange ? getDropdownPeriodLabelFromRange(filters.dateRange) ?? 'Customizado' : 'Customizado'
           console.log(

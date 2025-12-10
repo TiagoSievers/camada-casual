@@ -21,61 +21,15 @@ interface HeaderProps {
   onLoadArquitetos?: () => Promise<void>
 }
 
-type DateRangePreset = 'last7days' | 'thisMonth' | 'thisQuarter' | 'thisYear' | 'custom'
-
 export default function Header({ filters, filterOptions, onFiltersChange, activeTab = 'status', onLoadLojas, onLoadVendedores, onLoadArquitetos }: HeaderProps) {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
   const [startDate, setStartDate] = useState<Date>(new Date(filters.dateRange.start))
   const [endDate, setEndDate] = useState<Date>(new Date(filters.dateRange.end))
-  const [isCustomDateRange, setIsCustomDateRange] = useState(false)
   const datePickerRef = useRef<HTMLDivElement>(null)
-
-  const matchesPreset = (): boolean => {
-    if (!filters.dateRange) return false
-    
-    const start = new Date(filters.dateRange.start)
-    const end = new Date(filters.dateRange.end)
-    const now = new Date()
-    
-    const normalizeDate = (date: Date) => {
-      const d = new Date(date)
-      d.setHours(0, 0, 0, 0)
-      return d.getTime()
-    }
-    
-    const startTime = normalizeDate(start)
-    const endTime = normalizeDate(end)
-    const nowTime = normalizeDate(now)
-    
-    const last7Days = new Date()
-    last7Days.setDate(last7Days.getDate() - 7)
-    const last7DaysTime = normalizeDate(last7Days)
-    if (startTime === last7DaysTime && endTime >= nowTime - 86400000) return true
-    
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const thisMonthStartTime = normalizeDate(thisMonthStart)
-    if (startTime === thisMonthStartTime && endTime >= nowTime - 86400000) return true
-    
-    const threeMonthsAgo = new Date(now)
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    const threeMonthsAgoTime = normalizeDate(threeMonthsAgo)
-    const daysDiff = Math.abs((startTime - threeMonthsAgoTime) / (1000 * 60 * 60 * 24))
-    if (daysDiff <= 2 && endTime >= nowTime - 86400000) return true
-    
-    const thisYearStart = new Date(now.getFullYear(), 0, 1)
-    const thisYearStartTime = normalizeDate(thisYearStart)
-    if (startTime === thisYearStartTime && endTime >= nowTime - 86400000) return true
-    
-    return false
-  }
 
   useEffect(() => {
     setStartDate(new Date(filters.dateRange.start))
     setEndDate(new Date(filters.dateRange.end))
-    
-    if (matchesPreset()) {
-      setIsCustomDateRange(false)
-    }
   }, [filters.dateRange])
 
   useEffect(() => {
@@ -131,8 +85,6 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
       const adjustedEnd = new Date(end)
       adjustedEnd.setHours(23, 59, 59, 999)
 
-      setIsCustomDateRange(true)
-
       onFiltersChange({
         ...filters,
         dateRange: { start: adjustedStart, end: adjustedEnd },
@@ -140,102 +92,6 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
       
       setTimeout(() => setIsDatePickerOpen(false), 200)
     }
-  }
-
-  const getDateRangeForPreset = (preset: DateRangePreset): { start: Date; end: Date } => {
-    const end = new Date()
-    end.setHours(23, 59, 59, 999)
-    const start = new Date()
-
-    switch (preset) {
-      case 'last7days':
-        start.setDate(start.getDate() - 7)
-        start.setHours(0, 0, 0, 0)
-        break
-      case 'thisMonth':
-        start.setDate(1)
-        start.setHours(0, 0, 0, 0)
-        break
-      case 'thisQuarter':
-        start.setMonth(start.getMonth() - 3)
-        start.setHours(0, 0, 0, 0)
-        break
-      case 'thisYear':
-        start.setMonth(0, 1)
-        start.setHours(0, 0, 0, 0)
-        break
-      default:
-        start.setDate(start.getDate() - 30)
-        start.setHours(0, 0, 0, 0)
-    }
-
-    return { start, end }
-  }
-
-  const getCurrentPreset = (): DateRangePreset => {
-    if (!filters.dateRange) return 'last7days'
-    
-    if (isCustomDateRange) {
-      return 'custom'
-    }
-    
-    const start = new Date(filters.dateRange.start)
-    const end = new Date(filters.dateRange.end)
-    const now = new Date()
-    
-    const normalizeDate = (date: Date) => {
-      const d = new Date(date)
-      d.setHours(0, 0, 0, 0)
-      return d.getTime()
-    }
-    
-    const startTime = normalizeDate(start)
-    const endTime = normalizeDate(end)
-    const nowTime = normalizeDate(now)
-    
-    const last7Days = new Date()
-    last7Days.setDate(last7Days.getDate() - 7)
-    const last7DaysTime = normalizeDate(last7Days)
-    if (startTime === last7DaysTime && endTime >= nowTime - 86400000) {
-      return 'last7days'
-    }
-    
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const thisMonthStartTime = normalizeDate(thisMonthStart)
-    if (startTime === thisMonthStartTime && endTime >= nowTime - 86400000) {
-      return 'thisMonth'
-    }
-    
-    const threeMonthsAgo = new Date(now)
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    const threeMonthsAgoTime = normalizeDate(threeMonthsAgo)
-    const daysDiff = Math.abs((startTime - threeMonthsAgoTime) / (1000 * 60 * 60 * 24))
-    if (daysDiff <= 2 && endTime >= nowTime - 86400000) {
-      return 'thisQuarter'
-    }
-    
-    const thisYearStart = new Date(now.getFullYear(), 0, 1)
-    const thisYearStartTime = normalizeDate(thisYearStart)
-    if (startTime === thisYearStartTime && endTime >= nowTime - 86400000) {
-      return 'thisYear'
-    }
-    
-    return 'last7days'
-  }
-
-  const handlePresetChange = (preset: DateRangePreset) => {
-    if (preset === 'custom') {
-      return
-    }
-    
-    setIsCustomDateRange(false)
-    
-    const { start, end } = getDateRangeForPreset(preset)
-    
-    onFiltersChange({
-      ...filters,
-      dateRange: { start, end },
-    })
   }
 
   const handleNucleoChange = (nucleo: Nucleo | null) => {
@@ -274,7 +130,8 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
   }
 
   const showVendedorArquiteto = activeTab !== 'status'
-  const showStatus = activeTab === 'status'
+  // Removido: dropdown de Status não será mais exibido na página Status de Projetos
+  const showStatus = false // Sempre false, pois não queremos mostrar o filtro de status
 
   return (
     <header className="dashboard-header">
@@ -436,17 +293,6 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
         <div className="header-filters">
           <select
             className="filter-button"
-            value={getCurrentPreset()}
-            onChange={(e) => handlePresetChange(e.target.value as DateRangePreset)}
-          >
-            <option value="last7days">Últimos 7 dias</option>
-            <option value="thisMonth">Este Mês</option>
-            <option value="thisQuarter">Este Trimestre</option>
-            <option value="thisYear">Este Ano</option>
-            {isCustomDateRange && <option value="custom">Período Customizado</option>}
-          </select>
-          <select
-            className="filter-button"
             value={filters.nucleo || ''}
             onChange={(e) => handleNucleoChange(e.target.value as Nucleo || null)}
           >
@@ -477,6 +323,7 @@ export default function Header({ filters, filterOptions, onFiltersChange, active
               <option value="Enviado">Enviado</option>
               <option value="Aprovado">Aprovado</option>
               <option value="Reprovado">Reprovado</option>
+              <option value="Liberado para pedido">Liberado para pedido</option>
             </select>
           )}
           {showVendedorArquiteto && (

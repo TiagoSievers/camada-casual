@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react'
 import type { DashboardFilters, Nucleo, Project } from '@/types/dashboard'
 import { extractVendedorIds } from '@/types/dashboard'
-import { fetchAllOrcamentos, fetchProjects, fetchClientes } from '@/lib/api'
+import { fetchAllOrcamentos, fetchProjects, fetchClientes, fetchItemOrcamentosByOrcamentoIds, type ItemOrcamento } from '@/lib/api'
 
 interface Top10Item {
   id: string
@@ -137,7 +137,67 @@ export function useTop10Data(filters: DashboardFilters): UseTop10DataReturn {
         .slice(0, 10) // Top 10
 
       setClientes(clientesData)
-      setProdutos([]) // TODO: Implementar produtos
+
+      // Buscar itens de orçamento para calcular TOP 10 produtos
+      // Buscar diretamente pelo campo 'orcamento' usando constraint 'in'
+      if (filteredOrcamentos.length > 0) {
+        const orcamentoIds = filteredOrcamentos.map(orc => orc._id)
+        console.log(`[TOP10] Buscando itens de orçamento da API usando orcamento IDs (${orcamentoIds.length} orçamentos)...`)
+        const allItemOrcamentos = await fetchItemOrcamentosByOrcamentoIds(orcamentoIds)
+        console.log(`[TOP10] Itens de orçamento encontrados: ${allItemOrcamentos.length}`)
+
+        // Agrupar itens por produto e calcular métricas
+        const produtosMap = new Map<string, { nome: string; quantidade: number; receita: number }>()
+
+        allItemOrcamentos.forEach(item => {
+          const produtoId = item.produto
+          if (!produtoId) return
+
+          // Buscar nome do produto (campo disponível em item_orcamento)
+          const nomeProduto = (item as any)['nome_do_produto'] || 
+                             (item as any)['descricao_do_produto'] || 
+                             (item as any)['artigo'] ||
+                             `Produto ${produtoId.slice(0, 8)}...`
+
+          const quantidade = Number(item.quantidade) || 0
+          const precoTotal = Number(item.preco_total) || 0
+
+          const existing = produtosMap.get(produtoId)
+          if (existing) {
+            // Produto já existe, acumular valores
+            produtosMap.set(produtoId, {
+              nome: existing.nome, // Manter o primeiro nome encontrado
+              quantidade: existing.quantidade + quantidade,
+              receita: existing.receita + precoTotal,
+            })
+          } else {
+            // Primeira ocorrência do produto
+            produtosMap.set(produtoId, {
+              nome: nomeProduto,
+              quantidade: quantidade,
+              receita: precoTotal,
+            })
+          }
+        })
+
+        // Converter para array, ordenar por receita e pegar TOP 10
+        const produtosData: Top10Item[] = Array.from(produtosMap.entries())
+          .map(([id, data]) => {
+            return {
+              id,
+              name: data.nome, // Usar nome real do produto
+              value: data.receita, // Ordenar por receita total
+            }
+          })
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10) // Top 10
+
+        console.log(`[TOP10] TOP 10 produtos calculados: ${produtosData.length}`)
+        setProdutos(produtosData)
+      } else {
+        console.log(`[TOP10] Nenhum orçamento encontrado para buscar itens`)
+        setProdutos([])
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados de TOP 10')
       console.error('Erro ao carregar dados de TOP 10:', err)
